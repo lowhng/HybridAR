@@ -4,11 +4,15 @@
 // ============================================================================
 // EXPORT IMMEDIATELY (so module is available even if init fails)
 // ============================================================================
-window.WebXRAR = {
-    init: null, // Will be set below
-    reset: null, // Will be set below
-    isAnchored: () => false
-};
+// Export must happen at the very top, before any other code
+if (typeof window !== 'undefined') {
+    window.WebXRAR = {
+        init: null, // Will be set below
+        reset: null, // Will be set below
+        isAnchored: () => false
+    };
+    console.log('WebXRAR module exported');
+}
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -33,14 +37,36 @@ let animationTime = 0;
 // ============================================================================
 // DOM ELEMENTS
 // ============================================================================
-const arContainer = document.getElementById('ar-container');
-const resetButton = document.getElementById('reset-button');
+// Get DOM elements safely (may be null if script loads before DOM)
+let arContainer = null;
+let resetButton = null;
+
+function getDOMElements() {
+    if (!arContainer) {
+        arContainer = document.getElementById('ar-container');
+    }
+    if (!resetButton) {
+        resetButton = document.getElementById('reset-button');
+    }
+}
 
 // ============================================================================
 // INITIALIZATION
 // ============================================================================
 
 async function initWebXR() {
+    // Ensure DOM elements are available
+    getDOMElements();
+    
+    if (!arContainer) {
+        throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
+    }
+    
+    // Check if THREE.js is loaded
+    if (typeof THREE === 'undefined') {
+        throw new Error('THREE.js is not loaded. Please ensure Three.js is loaded before this script.');
+    }
+    
     // Check WebXR support
     if (!navigator.xr) {
         throw new Error('WebXR is not supported on this device. Please use an Android device with Chrome.');
@@ -319,16 +345,33 @@ function onXRFrame(time, frame) {
 // EVENT HANDLERS
 // ============================================================================
 
-if (resetButton) {
-    resetButton.addEventListener('click', () => {
-        resetAnchor();
-    });
+// Set up event handlers when DOM is ready
+function setupEventHandlers() {
+    getDOMElements();
+    if (resetButton) {
+        resetButton.addEventListener('click', () => {
+            resetAnchor();
+        });
+    }
+}
+
+// Try to set up handlers immediately, or wait for DOM
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupEventHandlers);
+} else {
+    setupEventHandlers();
 }
 
 // ============================================================================
 // UPDATE EXPORTS WITH ACTUAL FUNCTIONS
 // ============================================================================
 
-window.WebXRAR.init = initWebXR;
-window.WebXRAR.reset = resetAnchor;
-window.WebXRAR.isAnchored = () => isAnchored;
+// Ensure exports are set up
+if (typeof window !== 'undefined' && window.WebXRAR) {
+    window.WebXRAR.init = initWebXR;
+    window.WebXRAR.reset = resetAnchor;
+    window.WebXRAR.isAnchored = () => isAnchored;
+    console.log('WebXRAR functions assigned');
+} else {
+    console.error('Failed to assign WebXRAR functions - module not exported');
+}

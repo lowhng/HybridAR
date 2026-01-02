@@ -90,8 +90,24 @@ async function loadWebXR() {
                 // Wait a bit for the module to be exported
                 await new Promise(resolve => setTimeout(resolve, 100));
                 
+                // Check multiple times with increasing delays
+                let attempts = 0;
+                const maxAttempts = 10;
+                while (typeof window.WebXRAR === 'undefined' && attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    attempts++;
+                }
+                
                 if (typeof window.WebXRAR === 'undefined') {
+                    console.error('WebXRAR still undefined after', maxAttempts, 'attempts');
+                    console.error('window.WebXRAR:', window.WebXRAR);
                     reject(new Error('WebXRAR module not exported. Check console for errors.'));
+                    return;
+                }
+                
+                if (!window.WebXRAR.init) {
+                    console.error('WebXRAR.init is not defined');
+                    reject(new Error('WebXRAR.init is not defined. Module may not have loaded correctly.'));
                     return;
                 }
                 
@@ -103,8 +119,9 @@ async function loadWebXR() {
                     reject(error);
                 }
             };
-            script.onerror = () => {
-                reject(new Error('Failed to load WebXR implementation script'));
+            script.onerror = (error) => {
+                console.error('Script load error:', error);
+                reject(new Error('Failed to load WebXR implementation script. Check that main-webxr.js exists.'));
             };
             document.body.appendChild(script);
         });
