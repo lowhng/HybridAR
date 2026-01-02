@@ -1,0 +1,233 @@
+/* Reset and Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    background: #000;
+}
+
+/* AR Canvas Container - Full Screen */
+#ar-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+#ar-container canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* Camera Selector */
+.camera-selector {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 15px 20px;
+    border-radius: 15px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 250px;
+}
+
+.camera-selector.hidden {
+    display: none;
+}
+
+.camera-selector label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 5px;
+}
+
+.camera-select {
+    padding: 10px 15px;
+    font-size: 14px;
+    border: 2px solid #667eea;
+    border-radius: 10px;
+    background: white;
+    color: #333;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.camera-select:focus {
+    border-color: #764ba2;
+}
+
+/* Start AR Button */
+.start-button {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 15px 40px;
+    font-size: 18px;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    border-radius: 30px;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+    touch-action: manipulation;
+    min-height: 48px; /* iOS touch target minimum */
+}
+
+.start-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.start-button:active {
+    transform: translateX(-50%) scale(0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.start-button.hidden {
+    display: none;
+}
+
+/* Reset Button */
+.reset-button {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    padding: 12px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+    touch-action: manipulation;
+    min-height: 44px; /* iOS touch target minimum */
+}
+
+.reset-button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.reset-button:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.reset-button.hidden {
+    display: none;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+    backdrop-filter: blur(4px);
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 20px;
+    padding: 30px;
+    max-width: 90%;
+    width: 320px;
+    text-align: center;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+    margin-bottom: 25px;
+    font-size: 22px;
+    color: #333;
+}
+
+.modal-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.modal-button {
+    padding: 14px 24px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.2s, opacity 0.2s;
+    touch-action: manipulation;
+    min-height: 48px; /* iOS touch target minimum */
+}
+
+#keep-here-button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+#reposition-button {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.modal-button:active {
+    transform: scale(0.95);
+    opacity: 0.8;
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 480px) {
+    .modal-content {
+        padding: 25px;
+        width: 85%;
+    }
+    
+    .modal-content h3 {
+        font-size: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .start-button {
+        bottom: 20px;
+        padding: 12px 35px;
+        font-size: 16px;
+    }
+}
+

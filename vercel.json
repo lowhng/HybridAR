@@ -1,0 +1,6 @@
+{
+  "buildCommand": "echo 'No build step required'",
+  "outputDirectory": "public",
+  "framework": null
+}
+

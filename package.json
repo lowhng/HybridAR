@@ -1,0 +1,19 @@
+{
+  "name": "mindar-image-tracking",
+  "version": "1.0.0",
+  "description": "MindAR Image Tracking Web AR Application",
+  "scripts": {
+    "dev": "npx serve public",
+    "build": "echo 'Static site - no build step required'"
+  },
+  "keywords": [
+    "ar",
+    "augmented-reality",
+    "mindar",
+    "three.js",
+    "web-ar"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+

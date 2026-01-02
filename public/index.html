@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>MindAR Image Tracking</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- AR Canvas Container -->
+    <div id="ar-container"></div>
+
+    <!-- Camera Selection (initially hidden) -->
+    <div id="camera-selector" class="camera-selector hidden">
+        <label for="camera-select">Select Camera:</label>
+        <select id="camera-select" class="camera-select">
+            <option value="">Loading cameras...</option>
+        </select>
+    </div>
+
+    <!-- Start AR Button -->
+    <button id="start-button" class="start-button">Start AR</button>
+
+    <!-- Reset Button (only visible for WebXR) -->
+    <button id="reset-button" class="reset-button hidden">Reset</button>
+
+    <!-- Load Three.js as regular script (compatible) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+    
+    <!-- Load MindAR as regular script tag (for fallback) -->
+    <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.4/dist/mindar-image-three.prod.js"></script>
+    
+    <!-- Load Platform Detector first -->
+    <script src="platform-detector.js"></script>
+    
+    <!-- Load AR Controller (handles routing to WebXR or MindAR) -->
+    <script src="ar-controller.js"></script>
+    
+    <!-- Legacy debug script (kept for backward compatibility) -->
+    <script>
+        function debugMindAR() {
+            console.log('=== Debugging MindAR ===');
+            console.log('THREE:', typeof THREE);
+            
+            // Check if MindARThree already exists
+            if (typeof MindARThree !== 'undefined') {
+                console.log('✅ MindARThree found as global!');
+                return true;
+            }
+            
+            if (typeof window.MindARThree !== 'undefined') {
+                console.log('✅ MindARThree found on window!');
+                return true;
+            }
+            
+            // Check MINDAR (all caps) - this is what actually exists
+            if (window.MINDAR) {
+                console.log('Found window.MINDAR:', window.MINDAR);
+                const mindarKeys = Object.keys(window.MINDAR);
+                console.log('MINDAR keys:', mindarKeys);
+                
+                // Inspect MINDAR.IMAGE structure
+                if (window.MINDAR.IMAGE) {
+                    console.log('Found MINDAR.IMAGE:', window.MINDAR.IMAGE);
+                    const imageKeys = Object.keys(window.MINDAR.IMAGE);
+                    console.log('MINDAR.IMAGE keys:', imageKeys);
+                    
+                    // Log each key-value pair to understand the structure
+                    imageKeys.forEach(key => {
+                        const value = window.MINDAR.IMAGE[key];
+                        console.log(`MINDAR.IMAGE.${key}:`, typeof value, value);
+                    });
+                    
+                    // Try common patterns for MindARThree
+                    // Pattern 1: MINDAR.IMAGE.Three
+                    if (window.MINDAR.IMAGE.Three) {
+                        window.MindARThree = window.MINDAR.IMAGE.Three;
+                        console.log('✅ Found MindARThree in MINDAR.IMAGE.Three');
+                        return true;
+                    }
+                    
+                    // Pattern 2: MINDAR.IMAGE.MindARThree
+                    if (window.MINDAR.IMAGE.MindARThree) {
+                        window.MindARThree = window.MINDAR.IMAGE.MindARThree;
+                        console.log('✅ Found MindARThree in MINDAR.IMAGE.MindARThree');
+                        return true;
+                    }
+                    
+                    // Pattern 3: Check if any key contains "Three" and is a function/class
+                    for (const key of imageKeys) {
+                        const value = window.MINDAR.IMAGE[key];
+                        if (value && typeof value === 'function') {
+                            const keyLower = key.toLowerCase();
+                            if (keyLower.includes('three') || keyLower.includes('mindar')) {
+                                console.log(`Found potential MindARThree at MINDAR.IMAGE.${key}`);
+                                window.MindARThree = value;
+                                console.log('✅ Assigned MindARThree from MINDAR.IMAGE.' + key);
+                                return true;
+                            }
+                        }
+                    }
+                    
+                    // Pattern 4: Check if IMAGE itself is the constructor
+                    if (typeof window.MINDAR.IMAGE === 'function') {
+                        window.MindARThree = window.MINDAR.IMAGE;
+                        console.log('✅ MINDAR.IMAGE is the constructor itself');
+                        return true;
+                    }
+                }
+                
+                // Also check MINDAR directly for Three
+                if (window.MINDAR.Three) {
+                    window.MindARThree = window.MINDAR.Three;
+                    console.log('✅ Found MindARThree in MINDAR.Three');
+                    return true;
+                }
+            }
+            
+            // Fallback: Check old MindAR (mixed case) for backward compatibility
+            if (window.MindAR) {
+                console.log('Found window.MindAR (mixed case)');
+                const mindarKeys = Object.keys(window.MindAR);
+                console.log('MindAR keys:', mindarKeys);
+                
+                if (window.MindAR.Three) {
+                    window.MindARThree = window.MindAR.Three;
+                    console.log('✅ Found MindARThree in MindAR.Three');
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+        
+        function loadMainScript() {
+            // Final verification that MindARThree is available
+            if (typeof window.MindARThree === 'undefined') {
+                console.error('MindARThree is not available, cannot load main.js');
+                alert('MindARThree is not available. Please check the console for details.');
+                return;
+            }
+            
+            console.log('✅ MindARThree confirmed available, loading main.js...');
+            console.log('MindARThree type:', typeof window.MindARThree);
+            console.log('MindARThree:', window.MindARThree);
+            
+            const script = document.createElement('script');
+            script.src = 'main.js';
+            script.onload = () => {
+                console.log('✅ main.js loaded successfully');
+                // Verify MindARThree is still available after main.js loads
+                if (typeof MindARThree !== 'undefined') {
+                    console.log('✅ MindARThree accessible in main.js context');
+                }
+            };
+            script.onerror = () => {
+                alert('Failed to load main.js. Please ensure the file exists.');
+            };
+            document.body.appendChild(script);
+        }
+        
+        // Wait for everything to load
+        window.addEventListener('load', function() {
+            // Try multiple times with increasing delays
+            let attempts = 0;
+            const maxAttempts = 10;
+            
+            const checkInterval = setInterval(function() {
+                attempts++;
+                console.log(`Attempt ${attempts} to find MindARThree...`);
+                
+                if (debugMindAR()) {
+                    clearInterval(checkInterval);
+                    loadMainScript();
+                } else if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    console.error('MindARThree not found after all attempts');
+                    alert('MindARThree not found. The script loaded but did not expose MindARThree.\n\nPlease check the console for what was actually exported.');
+                }
+            }, 200);
+        });
+    </script>
+</body>
+</html>
+
