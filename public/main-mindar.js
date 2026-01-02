@@ -1,6 +1,18 @@
 // MindAR + Three.js Web AR Application
 // Image tracking - keeps object in place when target is lost
 
+// Wrap in IIFE to prevent variable conflicts with other scripts
+(function() {
+'use strict';
+
+// ============================================================================
+// EXPORT IMMEDIATELY (so module is available even if init fails)
+// ============================================================================
+window.MindARAR = {
+    init: null, // Will be set below
+    reset: null // Will be set below
+};
+
 // ============================================================================
 // STATE MANAGEMENT
 // ============================================================================
@@ -313,17 +325,22 @@ async function initMindAR() {
         
         renderer.render(scene, camera);
     });
+    
+    // Hide camera selector after AR session starts
+    if (cameraSelector) {
+        cameraSelector.classList.add('hidden');
+    }
 }
 
 // ============================================================================
-// EXPORT FOR AR CONTROLLER
+// UPDATE EXPORTS WITH ACTUAL FUNCTIONS
 // ============================================================================
 
-window.MindARAR = {
-    init: initMindAR,
-    reset: () => {
-        // Reset not needed for MindAR - it always tracks when target is visible
-        console.log('Reset not applicable for MindAR - always tracking when target visible');
-    }
+window.MindARAR.init = initMindAR;
+window.MindARAR.reset = () => {
+    // Reset not needed for MindAR - it always tracks when target is visible
+    console.log('Reset not applicable for MindAR - always tracking when target visible');
 };
+
+})(); // End IIFE - isolates scope to prevent conflicts
 

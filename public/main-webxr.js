@@ -2,6 +2,15 @@
 // Provides true world-space anchoring on Android devices
 
 // ============================================================================
+// EXPORT IMMEDIATELY (so module is available even if init fails)
+// ============================================================================
+window.WebXRAR = {
+    init: null, // Will be set below
+    reset: null, // Will be set below
+    isAnchored: () => false
+};
+
+// ============================================================================
 // STATE MANAGEMENT
 // ============================================================================
 let isTracking = false;
@@ -98,33 +107,34 @@ async function initWebXR() {
         const imageTrackingRequest = new XRImageTrackingRequest();
         
         // Try to load the image target
-        // User needs to provide target-image.jpg in assets folder
-        try {
-            imageTrackingRequest.addImage('./assets/target-image.jpg', {
-                widthInMeters: 0.09,  // 9cm
-                heightInMeters: 0.05  // 5cm
-            });
-        } catch (error) {
-            console.warn('Could not add image to tracking request:', error);
-            // Try alternative formats
-            const formats = ['./assets/target-image.png', './assets/target.jpg', './assets/target.png'];
-            let imageAdded = false;
-            for (const format of formats) {
-                try {
-                    imageTrackingRequest.addImage(format, {
-                        widthInMeters: 0.09,
-                        heightInMeters: 0.05
-                    });
-                    imageAdded = true;
-                    console.log('Added image:', format);
-                    break;
-                } catch (e) {
-                    // Try next format
-                }
+        // User needs to provide target-image in assets folder (jpg, jpeg, or png)
+        const imageFormats = [
+            './assets/target-image.jpg',
+            './assets/target-image.jpeg',
+            './assets/target-image.png',
+            './assets/target.jpg',
+            './assets/target.jpeg',
+            './assets/target.png'
+        ];
+        
+        let imageAdded = false;
+        for (const imagePath of imageFormats) {
+            try {
+                imageTrackingRequest.addImage(imagePath, {
+                    widthInMeters: 0.09,  // 9cm
+                    heightInMeters: 0.05  // 5cm
+                });
+                imageAdded = true;
+                console.log('Added image to tracking:', imagePath);
+                break;
+            } catch (e) {
+                // Try next format
+                console.log(`Failed to add ${imagePath}, trying next...`);
             }
-            if (!imageAdded) {
-                throw new Error('Could not add image target. Please ensure target-image.jpg exists in assets folder.');
-            }
+        }
+        
+        if (!imageAdded) {
+            throw new Error('Could not add image target. Please ensure target-image.jpg/jpeg/png exists in assets folder.');
         }
         
         imageTrackingSet = await xrSession.requestImageTracking(imageTrackingRequest);
@@ -316,11 +326,9 @@ if (resetButton) {
 }
 
 // ============================================================================
-// EXPORT FOR AR CONTROLLER
+// UPDATE EXPORTS WITH ACTUAL FUNCTIONS
 // ============================================================================
 
-window.WebXRAR = {
-    init: initWebXR,
-    reset: resetAnchor,
-    isAnchored: () => isAnchored
-};
+window.WebXRAR.init = initWebXR;
+window.WebXRAR.reset = resetAnchor;
+window.WebXRAR.isAnchored = () => isAnchored;

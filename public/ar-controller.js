@@ -12,7 +12,7 @@ let capabilities = null;
 // ============================================================================
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
-const cameraSelector = document.getElementById('camera-selector');
+// Note: cameraSelector is also declared in main-mindar.js, but in different scope
 
 // ============================================================================
 // INITIALIZATION
@@ -32,8 +32,9 @@ async function initializeAR() {
     if (startButton) {
         startButton.classList.add('hidden');
     }
-    if (cameraSelector) {
-        cameraSelector.classList.add('hidden');
+    const cameraSelectorEl = document.getElementById('camera-selector');
+    if (cameraSelectorEl) {
+        cameraSelectorEl.classList.add('hidden');
     }
     
     // Show/hide reset button based on system
@@ -86,6 +87,14 @@ async function loadWebXR() {
             script.src = 'main-webxr.js';
             script.onload = async () => {
                 console.log('WebXR script loaded');
+                // Wait a bit for the module to be exported
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                if (typeof window.WebXRAR === 'undefined') {
+                    reject(new Error('WebXRAR module not exported. Check console for errors.'));
+                    return;
+                }
+                
                 try {
                     await window.WebXRAR.init();
                     currentARSystem = 'webxr';
@@ -101,6 +110,9 @@ async function loadWebXR() {
         });
     } else {
         // Already loaded, just initialize
+        if (typeof window.WebXRAR === 'undefined' || !window.WebXRAR.init) {
+            throw new Error('WebXRAR module not properly initialized. Please refresh the page.');
+        }
         await window.WebXRAR.init();
         currentARSystem = 'webxr';
     }
@@ -126,6 +138,14 @@ async function loadMindAR() {
             script.src = 'main-mindar.js';
             script.onload = async () => {
                 console.log('MindAR script loaded');
+                // Wait a bit for the module to be exported
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                if (typeof window.MindARAR === 'undefined') {
+                    reject(new Error('MindARAR module not exported. Check console for errors.'));
+                    return;
+                }
+                
                 try {
                     await window.MindARAR.init();
                     currentARSystem = 'mindar';
@@ -141,6 +161,9 @@ async function loadMindAR() {
         });
     } else {
         // Already loaded, just initialize
+        if (typeof window.MindARAR === 'undefined' || !window.MindARAR.init) {
+            throw new Error('MindARAR module not properly initialized. Please refresh the page.');
+        }
         await window.MindARAR.init();
         currentARSystem = 'mindar';
     }
