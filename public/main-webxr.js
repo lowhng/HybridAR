@@ -118,12 +118,14 @@ async function initWebXR() {
     // Create WebGL renderer with XR enabled
     renderer = new THREE.WebGLRenderer({ 
         antialias: true, 
-        alpha: true,
+        alpha: true,  // Transparent background for AR camera feed
         canvas: document.createElement('canvas')
     });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.xr.enabled = true;
+    // For AR, we want the camera feed to show through
+    // Three.js XR renderer handles this automatically when connected to session
     _webxr_arContainer.appendChild(renderer.domElement);
 
     // Create content group
@@ -163,6 +165,9 @@ async function initWebXR() {
         // enabledFeatures is already an array
         console.log('Enabled features:', xrSession.enabledFeatures);
 
+        // CRITICAL: Connect renderer to XR session - this makes camera feed appear
+        renderer.xr.setSession(xrSession);
+
         // Set up reference space
         xrReferenceSpace = await xrSession.requestReferenceSpace('local');
         
@@ -187,6 +192,7 @@ async function initWebXR() {
         xrSession.addEventListener('end', () => {
             console.log('WebXR session ended');
             renderer.setAnimationLoop(null);
+            renderer.xr.setSession(null);  // Disconnect renderer from session
             isAnchored = false;
             worldAnchor = null;
         });
@@ -558,6 +564,7 @@ function onXRFrame(time, frame) {
         cubeMesh.rotation.x = animationTime * 0.5;
     }
 
+    // Render the scene - Three.js XR renderer handles camera feed automatically
     renderer.render(scene, camera);
 }
 
