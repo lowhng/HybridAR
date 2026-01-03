@@ -68,18 +68,18 @@ let cubeMesh;
 let animationTime = 0;
 
 // ============================================================================
-// DOM ELEMENTS
+// DOM ELEMENTS (prefixed to avoid collision with ar-controller.js)
 // ============================================================================
 // Get DOM elements safely (may be null if script loads before DOM)
-let arContainer = null;
-let resetButton = null;
+let _webxr_arContainer = null;
+let _webxr_resetButton = null;
 
 function getDOMElements() {
-    if (!arContainer) {
-        arContainer = document.getElementById('ar-container');
+    if (!_webxr_arContainer) {
+        _webxr_arContainer = document.getElementById('ar-container');
     }
-    if (!resetButton) {
-        resetButton = document.getElementById('reset-button');
+    if (!_webxr_resetButton) {
+        _webxr_resetButton = document.getElementById('reset-button');
     }
 }
 
@@ -91,7 +91,7 @@ async function initWebXR() {
     // Ensure DOM elements are available
     getDOMElements();
     
-    if (!arContainer) {
+    if (!_webxr_arContainer) {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
     }
     
@@ -124,7 +124,7 @@ async function initWebXR() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.xr.enabled = true;
-    arContainer.appendChild(renderer.domElement);
+    _webxr_arContainer.appendChild(renderer.domElement);
 
     // Create content group
     contentGroup = new THREE.Group();
@@ -391,8 +391,8 @@ function onXRFrame(time, frame) {
 // Set up event handlers when DOM is ready
 function setupEventHandlers() {
     getDOMElements();
-    if (resetButton) {
-        resetButton.addEventListener('click', () => {
+    if (_webxr_resetButton) {
+        _webxr_resetButton.addEventListener('click', () => {
             resetAnchor();
         });
     }
