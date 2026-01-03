@@ -160,13 +160,19 @@ async function initWebXR() {
         xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptions);
 
         console.log('WebXR session started');
-        console.log('Enabled features:', Array.from(xrSession.enabledFeatures));
+        // enabledFeatures is already an array
+        console.log('Enabled features:', xrSession.enabledFeatures);
 
         // Set up reference space
         xrReferenceSpace = await xrSession.requestReferenceSpace('local');
         
         // Initialize image tracking if available
-        if (xrSession.enabledFeatures.has('image-tracking')) {
+        // enabledFeatures is an array, not a Set
+        const hasImageTracking = xrSession.enabledFeatures && 
+                                 Array.isArray(xrSession.enabledFeatures) && 
+                                 xrSession.enabledFeatures.includes('image-tracking');
+        
+        if (hasImageTracking) {
             await initializeImageTracking();
         } else {
             console.warn('Image tracking not available, using hit-test fallback');
@@ -390,7 +396,10 @@ function onXRFrame(time, frame) {
 
     // Handle image tracking results if available
     // Check if image tracking is enabled and the API is available
-    const hasImageTracking = xrSession.enabledFeatures && xrSession.enabledFeatures.has('image-tracking');
+    // enabledFeatures is an array, not a Set
+    const hasImageTracking = xrSession.enabledFeatures && 
+                             Array.isArray(xrSession.enabledFeatures) && 
+                             xrSession.enabledFeatures.includes('image-tracking');
     const hasImageTrackingAPI = typeof frame.getImageTrackingResults === 'function';
     
     if (hasImageTracking && hasImageTrackingAPI) {
