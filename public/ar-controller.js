@@ -82,19 +82,40 @@ async function loadWebXR() {
     // Check if WebXR module is loaded
     if (typeof window.WebXRAR === 'undefined') {
         // Load the WebXR script with cache busting
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
+            // First, verify the script file exists by trying to fetch it
+            const scriptPath = 'main-webxr.js';
+            try {
+                const response = await fetch(scriptPath, { method: 'HEAD' });
+                if (!response.ok && response.status !== 0) {
+                    reject(new Error('WebXR script file not found. Please ensure main-webxr.js exists in the public folder.'));
+                    return;
+                }
+            } catch (fetchError) {
+                // Fetch might fail due to CORS, but that's okay - script tag should still work
+                console.warn('Could not verify script exists via fetch (this is usually okay):', fetchError);
+            }
+            
             const script = document.createElement('script');
             // Add cache busting timestamp to force fresh load
             const cacheBuster = '?v=' + Date.now() + '&t=' + Math.random();
-            script.src = './main-webxr.js' + cacheBuster;
+            // Use same path pattern as other scripts in index.html (no ./ prefix)
+            script.src = scriptPath + cacheBuster;
             script.async = false; // Ensure synchronous execution
             script.defer = false; // Don't defer execution
+            script.type = 'text/javascript'; // Explicit type
             
             // Set up error handler before appending
             script.onerror = (error) => {
                 console.error('Script load error:', error);
                 console.error('Failed to load script:', script.src);
-                reject(new Error('Failed to load WebXR implementation script. Check that main-webxr.js exists and is accessible.'));
+                const errorMsg = 'Failed to load WebXR script file. ' +
+                    'This could mean:\n' +
+                    '1. The file main-webxr.js is missing\n' +
+                    '2. There is a network connectivity issue\n' +
+                    '3. The file path is incorrect\n\n' +
+                    'Please check that the file exists and try refreshing the page.';
+                reject(new Error(errorMsg));
             };
             
             // Wrap onload in try-catch to catch any errors
@@ -102,43 +123,64 @@ async function loadWebXR() {
                 try {
                     console.log('WebXR script loaded from:', script.src);
                     
+                    // Give the script time to execute - scripts execute synchronously when loaded
+                    // But we'll wait a bit to be safe
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
                     // Check immediately
-                    if (typeof window.WebXRAR !== 'undefined') {
+                    let webxrModule = window.WebXRAR || window['WebXRAR'];
+                    if (webxrModule) {
                         console.log('WebXRAR found immediately after load');
                     } else {
                         console.warn('WebXRAR not found immediately, waiting...');
                     }
                     
-                    // Wait a bit for the module to be exported
+                    // Wait a bit more for the module to be exported
                     await new Promise(resolve => setTimeout(resolve, 200));
                     
                     // Check multiple times with increasing delays
                     let attempts = 0;
                     const maxAttempts = 30; // Increased attempts for mobile
-                    while (typeof window.WebXRAR === 'undefined' && attempts < maxAttempts) {
+                    while (typeof webxrModule === 'undefined' && attempts < maxAttempts) {
                         await new Promise(resolve => setTimeout(resolve, 100));
+                        webxrModule = window.WebXRAR || window['WebXRAR'];
                         attempts++;
                     }
                     
-                    // Check if module exists
-                    if (typeof window.WebXRAR === 'undefined') {
+                    // webxrModule already defined above, just verify it exists
+                    if (typeof webxrModule === 'undefined') {
+                        // Try one more time with bracket notation
+                        webxrModule = window['WebXRAR'];
+                    }
+                    
+                    if (typeof webxrModule === 'undefined') {
                         // Try to provide helpful error message
-                        const scriptError = 'The WebXR script failed to load or execute. This could be due to:\n' +
-                            '1. JavaScript error in main-webxr.js\n' +
-                            '2. Network issue loading the script\n' +
-                            '3. Browser compatibility issue\n\n' +
-                            'Please try refreshing the page or check your internet connection.';
+                        const scriptError = 'The WebXR script loaded but the module was not exported.\n\n' +
+                            'Possible causes:\n' +
+                            '1. JavaScript syntax error in main-webxr.js\n' +
+                            '2. The script file is empty or corrupted\n' +
+                            '3. Browser security restrictions\n\n' +
+                            'Try:\n' +
+                            '- Refreshing the page\n' +
+                            '- Clearing browser cache\n' +
+                            '- Using a different browser';
                         reject(new Error(scriptError));
                         return;
                     }
                     
-                    // Check if script loaded flag is set
-                    if (!window.WebXRAR._scriptLoaded) {
-                        // Script loaded but didn't complete - might have an error
-                        const incompleteError = 'The WebXR script loaded but did not complete initialization. ' +
-                            'There may be a JavaScript error preventing the module from being set up correctly.';
-                        reject(new Error(incompleteError));
-                        return;
+                    // Update reference
+                    window.WebXRAR = webxrModule;
+                    
+                    // Check if script loaded flag is set (but don't fail if it's not - might be old version)
+                    if (!webxrModule._scriptLoaded) {
+                        // Script loaded but flag not set - might be an old cached version or error
+                        // Still try to proceed if init function exists
+                        if (!webxrModule.init) {
+                            const incompleteError = 'The WebXR script loaded but initialization is incomplete. ' +
+                                'The script may have a JavaScript error. Please try refreshing the page.';
+                            reject(new Error(incompleteError));
+                            return;
+                        }
                     }
                     
                     // Verify init function exists and is a function

@@ -5,14 +5,46 @@
 // EXPORT IMMEDIATELY (so module is available even if init fails)
 // ============================================================================
 // CRITICAL: This must be the FIRST executable code in this file
-// No try-catch, no IIFE - just direct assignment to ensure it always works
-if (typeof window !== 'undefined') {
-    window.WebXRAR = window.WebXRAR || {};
-    window.WebXRAR.init = window.WebXRAR.init || null;
-    window.WebXRAR.reset = window.WebXRAR.reset || null;
-    window.WebXRAR.isAnchored = window.WebXRAR.isAnchored || (() => false);
-    window.WebXRAR._scriptLoaded = true;
-    window.WebXRAR._scriptLoadTime = Date.now();
+// Multiple export attempts to ensure it works even if one fails
+// Use both dot notation and bracket notation for maximum compatibility
+
+// Primary export attempt
+try {
+    if (typeof window !== 'undefined') {
+        window.WebXRAR = window.WebXRAR || {};
+        window.WebXRAR.init = window.WebXRAR.init || null;
+        window.WebXRAR.reset = window.WebXRAR.reset || null;
+        window.WebXRAR.isAnchored = window.WebXRAR.isAnchored || (function() { return false; });
+        window.WebXRAR._scriptLoaded = true;
+        window.WebXRAR._scriptLoadTime = Date.now();
+    }
+} catch(e) {
+    // Fallback 1: Bracket notation
+    try {
+        if (typeof window !== 'undefined') {
+            window['WebXRAR'] = window['WebXRAR'] || {};
+            window['WebXRAR']['init'] = window['WebXRAR']['init'] || null;
+            window['WebXRAR']['reset'] = window['WebXRAR']['reset'] || null;
+            window['WebXRAR']['isAnchored'] = window['WebXRAR']['isAnchored'] || (function() { return false; });
+            window['WebXRAR']['_scriptLoaded'] = true;
+            window['WebXRAR']['_scriptLoadTime'] = Date.now();
+        }
+    } catch(e2) {
+        // Fallback 2: globalThis
+        try {
+            var global = typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : (typeof self !== 'undefined' ? self : this));
+            if (global) {
+                global['WebXRAR'] = global['WebXRAR'] || {};
+                global['WebXRAR']['_scriptLoaded'] = true;
+                global['WebXRAR']['_scriptLoadTime'] = Date.now();
+            }
+        } catch(e3) {
+            // Last resort: eval (only if absolutely necessary)
+            try {
+                eval('(typeof window !== "undefined" ? window : globalThis).WebXRAR = (typeof window !== "undefined" ? window : globalThis).WebXRAR || {};');
+            } catch(e4) {}
+        }
+    }
 }
 
 // ============================================================================
