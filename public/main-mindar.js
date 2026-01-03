@@ -39,8 +39,23 @@ let mindarThree;
 // DOM ELEMENTS
 // ============================================================================
 const arContainer = document.getElementById('ar-container');
-const cameraSelector = document.getElementById('camera-selector');
-const cameraSelect = document.getElementById('camera-select');
+let cameraSelector = document.getElementById('camera-selector');
+let cameraSelect = document.getElementById('camera-select');
+
+// Helper function to get camera selector element (in case DOM wasn't ready when script loaded)
+function getCameraSelector() {
+    if (!cameraSelector) {
+        cameraSelector = document.getElementById('camera-selector');
+    }
+    return cameraSelector;
+}
+
+function getCameraSelect() {
+    if (!cameraSelect) {
+        cameraSelect = document.getElementById('camera-select');
+    }
+    return cameraSelect;
+}
 
 // ============================================================================
 // CAMERA ENUMERATION
@@ -53,19 +68,28 @@ async function enumerateCameras() {
         
         console.log('Available cameras:', videoDevices);
         
+        // Get fresh references to DOM elements
+        const cameraSelectEl = getCameraSelect();
+        const cameraSelectorEl = getCameraSelector();
+        
+        if (!cameraSelectEl) {
+            console.warn('Camera select element not found');
+            return videoDevices;
+        }
+        
         // Clear existing options
-        cameraSelect.innerHTML = '';
+        cameraSelectEl.innerHTML = '';
         
         if (videoDevices.length === 0) {
-            cameraSelect.innerHTML = '<option value="">No cameras found</option>';
-            return;
+            cameraSelectEl.innerHTML = '<option value="">No cameras found</option>';
+            return videoDevices;
         }
         
         // Add default option
         const defaultOption = document.createElement('option');
         defaultOption.value = '';
         defaultOption.textContent = 'Default (Auto-select)';
-        cameraSelect.appendChild(defaultOption);
+        cameraSelectEl.appendChild(defaultOption);
         
         // Add each camera as an option
         videoDevices.forEach((device, index) => {
@@ -73,12 +97,12 @@ async function enumerateCameras() {
             option.value = device.deviceId;
             const label = device.label || `Camera ${index + 1}`;
             option.textContent = label;
-            cameraSelect.appendChild(option);
+            cameraSelectEl.appendChild(option);
         });
         
         // Show camera selector if multiple cameras
-        if (videoDevices.length > 1) {
-            cameraSelector.classList.remove('hidden');
+        if (videoDevices.length > 1 && cameraSelectorEl) {
+            cameraSelectorEl.classList.remove('hidden');
         }
         
         return videoDevices;
@@ -134,8 +158,9 @@ async function initMindAR() {
     console.log('Testing camera access...');
     let testStream = null;
     try {
-        const constraints = cameraSelect.value 
-            ? { video: { deviceId: { exact: cameraSelect.value } } }
+        const cameraSelectEl = getCameraSelect();
+        const constraints = cameraSelectEl && cameraSelectEl.value 
+            ? { video: { deviceId: { exact: cameraSelectEl.value } } }
             : { video: { facingMode: 'user' } };
         
         testStream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -276,8 +301,19 @@ async function initMindAR() {
     try {
         await mindarThree.start();
         console.log('AR session started successfully');
+        
+        // Hide camera selector immediately after AR session starts successfully
+        // This ensures it's hidden even if there are errors later in the function
+        const cameraSelectorEl = getCameraSelector();
+        if (cameraSelectorEl) {
+            cameraSelectorEl.classList.add('hidden');
+            console.log('Camera selector hidden after AR session start');
+        } else {
+            console.warn('Camera selector element not found when trying to hide it');
+        }
     } catch (startError) {
         console.error('Failed to start AR session:', startError);
+        // Don't hide camera selector on error - user might want to try again with different camera
         if (startError.name === 'NotAllowedError' || startError.name === 'PermissionDeniedError') {
             throw new Error('Camera permission denied. Please allow camera access in your browser settings and try again.');
         } else if (startError.name === 'NotFoundError' || startError.name === 'DevicesNotFoundError') {
@@ -326,9 +362,12 @@ async function initMindAR() {
         renderer.render(scene, camera);
     });
     
-    // Hide camera selector after AR session starts
-    if (cameraSelector) {
-        cameraSelector.classList.add('hidden');
+    // Ensure camera selector is hidden (redundant check in case it wasn't hidden above)
+    // This is a safeguard to ensure it's hidden even if the code path above didn't execute
+    const cameraSelectorEl = getCameraSelector();
+    if (cameraSelectorEl && !cameraSelectorEl.classList.contains('hidden')) {
+        cameraSelectorEl.classList.add('hidden');
+        console.log('Camera selector hidden (safeguard check)');
     }
 }
 

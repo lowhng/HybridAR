@@ -5,14 +5,36 @@
 // EXPORT IMMEDIATELY (so module is available even if init fails)
 // ============================================================================
 // Export must happen at the very top, before any other code
-if (typeof window !== 'undefined') {
-    window.WebXRAR = {
-        init: null, // Will be set below
-        reset: null, // Will be set below
-        isAnchored: () => false
-    };
-    console.log('WebXRAR module exported');
-}
+// Use IIFE to ensure execution even if there are errors later
+(function() {
+    'use strict';
+    try {
+        if (typeof window !== 'undefined') {
+            window.WebXRAR = {
+                init: null, // Will be set below
+                reset: null, // Will be set below
+                isAnchored: () => false
+            };
+            console.log('[WebXRAR] Module exported successfully');
+        } else {
+            console.error('[WebXRAR] window object not available');
+        }
+    } catch (e) {
+        console.error('[WebXRAR] Error during export:', e);
+        // Try to export anyway
+        try {
+            if (typeof window !== 'undefined') {
+                window.WebXRAR = window.WebXRAR || {
+                    init: null,
+                    reset: null,
+                    isAnchored: () => false
+                };
+            }
+        } catch (e2) {
+            console.error('[WebXRAR] Failed to export even with fallback:', e2);
+        }
+    }
+})();
 
 // ============================================================================
 // STATE MANAGEMENT
@@ -366,12 +388,47 @@ if (document.readyState === 'loading') {
 // UPDATE EXPORTS WITH ACTUAL FUNCTIONS
 // ============================================================================
 
-// Ensure exports are set up
-if (typeof window !== 'undefined' && window.WebXRAR) {
-    window.WebXRAR.init = initWebXR;
-    window.WebXRAR.reset = resetAnchor;
-    window.WebXRAR.isAnchored = () => isAnchored;
-    console.log('WebXRAR functions assigned');
-} else {
-    console.error('Failed to assign WebXRAR functions - module not exported');
+// Ensure exports are set up - wrap in try-catch to prevent errors from breaking assignment
+try {
+    if (typeof window !== 'undefined') {
+        if (!window.WebXRAR) {
+            // If export didn't happen, try to create it now
+            console.warn('[WebXRAR] Module not found, creating now...');
+            window.WebXRAR = {
+                init: null,
+                reset: null,
+                isAnchored: () => false
+            };
+        }
+        
+        window.WebXRAR.init = initWebXR;
+        window.WebXRAR.reset = resetAnchor;
+        window.WebXRAR.isAnchored = () => isAnchored;
+        
+        // Set a flag to indicate script loaded successfully
+        window.WebXRAR._loaded = true;
+        window.WebXRAR._loadTime = Date.now();
+        
+        console.log('[WebXRAR] Functions assigned successfully');
+        console.log('[WebXRAR] init type:', typeof window.WebXRAR.init);
+        console.log('[WebXRAR] reset type:', typeof window.WebXRAR.reset);
+        console.log('[WebXRAR] Script execution completed at:', new Date().toISOString());
+    } else {
+        console.error('[WebXRAR] window object not available when assigning functions');
+    }
+} catch (error) {
+    console.error('[WebXRAR] Error assigning functions:', error);
+    // Try to at least set the functions even if there was an error
+    try {
+        if (typeof window !== 'undefined') {
+            window.WebXRAR = window.WebXRAR || {};
+            window.WebXRAR.init = initWebXR;
+            window.WebXRAR.reset = resetAnchor;
+            window.WebXRAR.isAnchored = () => isAnchored;
+            window.WebXRAR._loaded = true;
+            window.WebXRAR._loadTime = Date.now();
+        }
+    } catch (e2) {
+        console.error('[WebXRAR] Complete failure to assign functions:', e2);
+    }
 }
