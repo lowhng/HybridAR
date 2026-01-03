@@ -1,4 +1,5 @@
-// WebXR + Three.js AR Application with Image Tracking
+// WebXR + Three.js AR Application
+// Uses standard WebXR APIs: anchors and hit-testing for world-space AR
 // Provides true world-space anchoring on Android devices
 
 // ============================================================================
@@ -50,14 +51,13 @@ try {
 // ============================================================================
 // STATE MANAGEMENT
 // ============================================================================
-let isTracking = false;
 let isAnchored = false;
 let xrSession = null;
 let xrReferenceSpace = null;
-let imageTrackingSet = null;
+let viewerSpace = null;
+let hitTestSource = null;
 let worldAnchor = null;
-let anchorPose = null;
-let lastKnownPosition = null;
+let anchorTransform = null;
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -66,6 +66,7 @@ let scene, camera, renderer;
 let contentGroup;
 let cubeMesh;
 let animationTime = 0;
+let reticle = null;
 
 // ============================================================================
 // DOM ELEMENTS (prefixed to avoid collision with ar-controller.js)
@@ -140,6 +141,19 @@ async function initWebXR() {
     cubeMesh = new THREE.Mesh(geometry, material);
     cubeMesh.position.set(0, 0.1, 0);
     contentGroup.add(cubeMesh);
+    contentGroup.visible = false; // Hide until anchored
+
+    // Create reticle (indicator for where content will be placed)
+    const reticleGeometry = new THREE.RingGeometry(0.15, 0.2, 32).rotateX(-Math.PI / 2);
+    const reticleMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.8
+    });
+    reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+    scene.add(reticle);
 
     // Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
@@ -148,61 +162,34 @@ async function initWebXR() {
     directionalLight.position.set(5, 10, 5);
     scene.add(directionalLight);
 
-    // Start WebXR session
+    // Start WebXR session with anchors and hit-test features
     try {
-        xrSession = await navigator.xr.requestSession('immersive-ar', {
+        // Request session with anchors and hit-test (standard WebXR features)
+        const sessionInit = {
             requiredFeatures: ['local'],
-            optionalFeatures: ['image-tracking']
-        });
+            optionalFeatures: ['anchors', 'hit-test']
+        };
+
+        xrSession = await navigator.xr.requestSession('immersive-ar', sessionInit);
 
         console.log('WebXR session started');
+        console.log('Enabled features:', Array.from(xrSession.enabledFeatures));
 
         // Set up reference space
         xrReferenceSpace = await xrSession.requestReferenceSpace('local');
         
-        // Create image tracking
-        // Note: WebXR image tracking requires the original image file, not .mind file
-        // Dimensions: 9cm x 5cm namecard = 0.09m x 0.05m
-        const imageTrackingRequest = new XRImageTrackingRequest();
-        
-        // Try to load the image target
-        // User needs to provide target-image in assets folder (jpg, jpeg, or png)
-        const imageFormats = [
-            './assets/target-image.jpg',
-            './assets/target-image.jpeg',
-            './assets/target-image.png',
-            './assets/target.jpg',
-            './assets/target.jpeg',
-            './assets/target.png'
-        ];
-        
-        let imageAdded = false;
-        for (const imagePath of imageFormats) {
+        // Get viewer space for hit-testing
+        viewerSpace = await xrSession.requestReferenceSpace('viewer');
+
+        // Set up hit-test source if available
+        if (xrSession.enabledFeatures.has('hit-test')) {
             try {
-                imageTrackingRequest.addImage(imagePath, {
-                    widthInMeters: 0.09,  // 9cm
-                    heightInMeters: 0.05  // 5cm
-                });
-                imageAdded = true;
-                console.log('Added image to tracking:', imagePath);
-                break;
-            } catch (e) {
-                // Try next format
-                console.log(`Failed to add ${imagePath}, trying next...`);
+                hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+                console.log('Hit-test source created');
+            } catch (error) {
+                console.warn('Hit-test not available:', error);
             }
         }
-        
-        if (!imageAdded) {
-            throw new Error('Could not add image target. Please ensure target-image.jpg/jpeg/png exists in assets folder.');
-        }
-        
-        imageTrackingSet = await xrSession.requestImageTracking(imageTrackingRequest);
-        console.log('Image tracking initialized');
-        
-        // Listen for image tracking events
-        imageTrackingSet.addEventListener('track', (event) => {
-            handleImageTracking(event);
-        });
 
         // Set up render loop
         renderer.setAnimationLoop(onXRFrame);
@@ -213,6 +200,9 @@ async function initWebXR() {
             renderer.setAnimationLoop(null);
             isAnchored = false;
             worldAnchor = null;
+            hitTestSource = null;
+            contentGroup.visible = false;
+            reticle.visible = false;
         });
 
         // Handle window resize
@@ -222,63 +212,61 @@ async function initWebXR() {
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
+        // Auto-place content after a short delay if hit-test is available
+        // Otherwise, place at a fixed position
+        if (!hitTestSource) {
+            // No hit-test available, place content at fixed position
+            setTimeout(() => {
+                placeContentAtFixedPosition();
+            }, 1000);
+        }
+
     } catch (error) {
         console.error('Failed to start WebXR session:', error);
         throw error;
     }
 }
 
+// Place content at a fixed position (fallback when hit-test unavailable)
+async function placeContentAtFixedPosition() {
+    if (isAnchored || !xrReferenceSpace) return;
+
+    try {
+        // Place content 1 meter in front of the viewer
+        const position = { x: 0, y: 0, z: -1, w: 1 };
+        const orientation = { x: 0, y: 0, z: 0, w: 1 };
+        const transform = new XRRigidTransform(position, orientation);
+
+        if (xrSession.enabledFeatures.has('anchors') && xrReferenceSpace.createAnchor) {
+            // Create anchor if available (WebXR Anchors API)
+            try {
+                const anchor = await xrReferenceSpace.createAnchor(transform, xrReferenceSpace);
+                worldAnchor = anchor;
+                anchorTransform = transform;
+                isAnchored = true;
+                contentGroup.visible = true;
+                console.log('Content anchored at fixed position');
+            } catch (error) {
+                console.warn('Could not create anchor, using transform:', error);
+                // Fallback: just use the transform
+                anchorTransform = transform;
+                isAnchored = true;
+                contentGroup.visible = true;
+            }
+        } else {
+            // No anchors, just use transform
+            anchorTransform = transform;
+            isAnchored = true;
+            contentGroup.visible = true;
+        }
+    } catch (error) {
+        console.error('Failed to place content:', error);
+    }
+}
+
 // Assign init function immediately after definition
 if (typeof window !== 'undefined' && window.WebXRAR) {
     window.WebXRAR.init = initWebXR;
-}
-
-// ============================================================================
-// IMAGE TRACKING HANDLER
-// ============================================================================
-
-function handleImageTracking(event) {
-    const trackedImage = event.trackedImage;
-    
-    if (trackedImage.trackingState === 'tracked') {
-        if (!isTracking) {
-            isTracking = true;
-            console.log('Image target tracked');
-        }
-        
-        // On first detection, automatically create world-space anchor
-        if (!isAnchored && trackedImage.trackingState === 'tracked') {
-            createWorldAnchor(trackedImage);
-        }
-    } else {
-        if (isTracking) {
-            isTracking = false;
-            console.log('Image target lost');
-        }
-    }
-}
-
-// ============================================================================
-// WORLD-SPACE ANCHORING
-// ============================================================================
-
-function createWorldAnchor(trackedImage) {
-    if (isAnchored || !xrReferenceSpace) {
-        return;
-    }
-    
-    console.log('Creating world-space anchor on first detection');
-    
-    // Get the pose of the tracked image
-    // We'll create an anchor at the image's position
-    // Note: We need to get this from the frame, so we'll store the tracked image
-    // and create the anchor in the render loop
-    
-    // For now, mark that we should anchor on next frame
-    anchorPose = trackedImage;
-    isAnchored = true;
-    
-    console.log('World-space anchor created - object will stay in environment');
 }
 
 // ============================================================================
@@ -291,9 +279,20 @@ function resetAnchor() {
         worldAnchor = null;
     }
     isAnchored = false;
-    anchorPose = null;
-    lastKnownPosition = null;
-    console.log('Anchor reset - will re-anchor on next detection');
+    anchorTransform = null;
+    contentGroup.visible = false;
+    reticle.visible = false;
+    console.log('Anchor reset - content will be re-placed');
+    
+    // Re-place content if hit-test is available
+    if (hitTestSource) {
+        // Will be placed on next hit-test result
+    } else {
+        // Re-place at fixed position
+        setTimeout(() => {
+            placeContentAtFixedPosition();
+        }, 500);
+    }
 }
 
 // Assign reset function immediately after definition
@@ -316,32 +315,35 @@ function onXRFrame(time, frame) {
     camera.position.setFromMatrixPosition(view.transform.matrix);
     camera.quaternion.setFromRotationMatrix(view.transform.matrix);
 
-    // Create anchor if needed (on first detection)
-    if (isAnchored && !worldAnchor && anchorPose) {
-        try {
-            // Get the image's pose in the reference space
-            const imagePose = frame.getPose(anchorPose.imageSpace, xrReferenceSpace);
-            if (imagePose) {
-                // Create anchor at the tracked image position
-                // Use the image's transform to create the anchor
-                const anchorTransform = new XRRigidTransform(
-                    imagePose.transform.position,
-                    imagePose.transform.orientation
-                );
+    // Perform hit-test if available and not yet anchored
+    if (hitTestSource && !isAnchored) {
+        const hitTestResults = frame.getHitTestResults(hitTestSource);
+        
+        if (hitTestResults.length > 0) {
+            const hit = hitTestResults[0];
+            const hitPose = hit.getPose(xrReferenceSpace);
+            
+            if (hitPose) {
+                // Show reticle at hit position
+                reticle.visible = true;
+                const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix);
+                reticle.matrix.copy(matrix);
                 
-                worldAnchor = xrReferenceSpace.createAnchor(anchorTransform, xrReferenceSpace);
-                console.log('World anchor created successfully at image position');
+                // Auto-place content after a brief moment
+                if (!isAnchored) {
+                    setTimeout(() => {
+                        if (!isAnchored && hitTestSource) {
+                            placeContentAtHit(hit);
+                        }
+                    }, 500);
+                }
             }
-        } catch (error) {
-            console.warn('Could not create anchor:', error);
-            // Fallback: store current position
-            const worldPos = new THREE.Vector3();
-            contentGroup.getWorldPosition(worldPos);
-            lastKnownPosition = worldPos.clone();
+        } else {
+            reticle.visible = false;
         }
     }
 
-    // Update object position based on anchor or tracked image
+    // Update content position based on anchor or transform
     if (worldAnchor && isAnchored) {
         // Anchor maintains world-space position automatically
         try {
@@ -355,23 +357,15 @@ function onXRFrame(time, frame) {
             // Anchor might not be ready yet or was deleted
             if (error.name === 'InvalidStateError') {
                 worldAnchor = null;
+                isAnchored = false;
+                contentGroup.visible = false;
             }
         }
-    } else if (anchorPose && isAnchored) {
-        // Fallback: use tracked image position if anchor not available
-        try {
-            const imagePose = frame.getPose(anchorPose.imageSpace, xrReferenceSpace);
-            if (imagePose) {
-                const matrix = new THREE.Matrix4().fromArray(imagePose.transform.matrix);
-                contentGroup.position.setFromMatrixPosition(matrix);
-                contentGroup.quaternion.setFromRotationMatrix(matrix);
-            }
-        } catch (error) {
-            // Image tracking lost - maintain last known position
-            if (lastKnownPosition) {
-                contentGroup.position.copy(lastKnownPosition);
-            }
-        }
+    } else if (anchorTransform && isAnchored) {
+        // Use stored transform (fallback when anchors not available)
+        const matrix = new THREE.Matrix4().fromArray(anchorTransform.matrix);
+        contentGroup.position.setFromMatrixPosition(matrix);
+        contentGroup.quaternion.setFromRotationMatrix(matrix);
     }
 
     // Rotate cube
@@ -382,6 +376,48 @@ function onXRFrame(time, frame) {
     }
 
     renderer.render(scene, camera);
+}
+
+// Place content at hit-test result
+async function placeContentAtHit(hit) {
+    if (isAnchored || !xrReferenceSpace) return;
+
+    try {
+        const hitPose = hit.getPose(xrReferenceSpace);
+        if (!hitPose) return;
+
+        const transform = new XRRigidTransform(
+            hitPose.transform.position,
+            hitPose.transform.orientation
+        );
+
+        if (xrSession.enabledFeatures.has('anchors') && xrReferenceSpace.createAnchor) {
+            // Create anchor at hit position (WebXR Anchors API)
+            try {
+                const anchor = await xrReferenceSpace.createAnchor(transform, xrReferenceSpace);
+                worldAnchor = anchor;
+                anchorTransform = transform;
+                isAnchored = true;
+                contentGroup.visible = true;
+                reticle.visible = false;
+                console.log('Content anchored at hit position');
+            } catch (error) {
+                console.warn('Could not create anchor, using transform:', error);
+                anchorTransform = transform;
+                isAnchored = true;
+                contentGroup.visible = true;
+                reticle.visible = false;
+            }
+        } else {
+            // No anchors, just use transform
+            anchorTransform = transform;
+            isAnchored = true;
+            contentGroup.visible = true;
+            reticle.visible = false;
+        }
+    } catch (error) {
+        console.error('Failed to place content at hit:', error);
+    }
 }
 
 // ============================================================================
@@ -436,3 +472,4 @@ if (typeof window !== 'undefined') {
     window.WebXRAR._loadTime = Date.now();
     window.WebXRAR._scriptLoaded = true;
 }
+
