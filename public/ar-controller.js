@@ -85,9 +85,10 @@ async function loadWebXR() {
         return new Promise((resolve, reject) => {
             const script = document.createElement('script');
             // Add cache busting timestamp to force fresh load
-            const cacheBuster = '?v=' + Date.now();
-            script.src = 'main-webxr.js' + cacheBuster;
+            const cacheBuster = '?v=' + Date.now() + '&t=' + Math.random();
+            script.src = './main-webxr.js' + cacheBuster;
             script.async = false; // Ensure synchronous execution
+            script.defer = false; // Don't defer execution
             
             // Set up error handler before appending
             script.onerror = (error) => {
@@ -109,44 +110,45 @@ async function loadWebXR() {
                     }
                     
                     // Wait a bit for the module to be exported
-                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await new Promise(resolve => setTimeout(resolve, 200));
                     
                     // Check multiple times with increasing delays
                     let attempts = 0;
-                    const maxAttempts = 20; // Increased attempts
+                    const maxAttempts = 30; // Increased attempts for mobile
                     while (typeof window.WebXRAR === 'undefined' && attempts < maxAttempts) {
-                        await new Promise(resolve => setTimeout(resolve, 50));
+                        await new Promise(resolve => setTimeout(resolve, 100));
                         attempts++;
-                        if (attempts % 5 === 0) {
-                            console.log(`Checking for WebXRAR... attempt ${attempts}/${maxAttempts}`);
-                        }
                     }
                     
+                    // Check if module exists
                     if (typeof window.WebXRAR === 'undefined') {
-                        console.error('WebXRAR still undefined after', maxAttempts, 'attempts');
-                        console.error('window object keys:', Object.keys(window).filter(k => k.includes('WebXR') || k.includes('AR')));
-                        console.error('Script src was:', script.src);
-                        console.error('Check browser console for JavaScript errors in main-webxr.js');
-                        reject(new Error('WebXRAR module not exported. The script may have a JavaScript error. Check browser console for details.'));
+                        // Try to provide helpful error message
+                        const scriptError = 'The WebXR script failed to load or execute. This could be due to:\n' +
+                            '1. JavaScript error in main-webxr.js\n' +
+                            '2. Network issue loading the script\n' +
+                            '3. Browser compatibility issue\n\n' +
+                            'Please try refreshing the page or check your internet connection.';
+                        reject(new Error(scriptError));
                         return;
                     }
                     
-                    console.log('WebXRAR module found:', window.WebXRAR);
-                    console.log('WebXRAR._loaded flag:', window.WebXRAR._loaded);
-                    console.log('WebXRAR._loadTime:', window.WebXRAR._loadTime ? new Date(window.WebXRAR._loadTime).toISOString() : 'not set');
+                    // Check if script loaded flag is set
+                    if (!window.WebXRAR._scriptLoaded) {
+                        // Script loaded but didn't complete - might have an error
+                        const incompleteError = 'The WebXR script loaded but did not complete initialization. ' +
+                            'There may be a JavaScript error preventing the module from being set up correctly.';
+                        reject(new Error(incompleteError));
+                        return;
+                    }
                     
+                    // Verify init function exists and is a function
                     if (!window.WebXRAR.init) {
-                        console.error('WebXRAR.init is not defined');
-                        console.error('WebXRAR object:', window.WebXRAR);
-                        console.error('WebXRAR._loaded:', window.WebXRAR._loaded);
-                        reject(new Error('WebXRAR.init is not defined. Module may not have loaded correctly. Check console for errors.'));
+                        reject(new Error('WebXRAR.init is not defined. The script may have an error preventing function assignment.'));
                         return;
                     }
                     
-                    // Verify the init function is actually a function
                     if (typeof window.WebXRAR.init !== 'function') {
-                        console.error('WebXRAR.init is not a function, it is:', typeof window.WebXRAR.init);
-                        reject(new Error('WebXRAR.init is not a function. Module may not have loaded correctly.'));
+                        reject(new Error('WebXRAR.init is not a function. The script may have an error.'));
                         return;
                     }
                     
