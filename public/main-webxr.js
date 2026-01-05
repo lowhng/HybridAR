@@ -270,27 +270,30 @@ async function initWebXR() {
         console.log('Starting render loop...');
         renderer.setAnimationLoop(onXRFrame);
         
-        // CRITICAL FIX 9: Force an initial render to trigger camera feed
-        // Android sometimes needs an explicit render call to start the camera feed
-        requestAnimationFrame(() => {
-            if (renderer && scene && camera) {
-                try {
-                    renderer.render(scene, camera);
-                    console.log('Initial render completed - camera feed should now be visible');
-                } catch (renderError) {
-                    console.warn('Initial render failed (this may be normal):', renderError);
-                }
-            }
-        });
+        // CRITICAL FIX 9: Remove manual render - WebXR animation loop handles rendering
+        // Manual render calls can interfere with XR rendering
+        console.log('Render loop started - camera feed should appear shortly');
 
         // Handle session end
         xrSession.addEventListener('end', () => {
-            console.log('WebXR session ended');
+            console.log('WebXR session ended - this may cause black screen');
+            console.log('Session end reason - check if this was unexpected');
             renderer.setAnimationLoop(null);
             renderer.xr.setSession(null);  // Disconnect renderer from session
             isAnchored = false;
             worldAnchor = null;
         });
+        
+        // CRITICAL FIX 11: Monitor session state changes
+        // Android sometimes ends the session prematurely - log when this happens
+        if (xrSession.addEventListener) {
+            xrSession.addEventListener('visibilitychange', () => {
+                console.log('WebXR session visibility changed:', xrSession.visibilityState);
+                if (xrSession.visibilityState === 'hidden') {
+                    console.warn('Session became hidden - camera feed may disappear');
+                }
+            });
+        }
 
         // Handle window resize
         window.addEventListener('resize', () => {
@@ -484,7 +487,17 @@ if (typeof window !== 'undefined' && window.WebXRAR) {
 // RENDER LOOP
 // ============================================================================
 
+// Frame counter for debugging
+let _webxr_frameCount = 0;
+
 function onXRFrame(time, frame) {
+    _webxr_frameCount++;
+    
+    // Log periodically to verify render loop is running
+    if (_webxr_frameCount % 300 === 0) { // Every ~5 seconds at 60fps
+        console.log('Render loop active - frame:', _webxr_frameCount, 'session state:', xrSession?.state);
+    }
+    
     if (!xrSession || !xrReferenceSpace) {
         // CRITICAL FIX 7: Log early returns for debugging
         if (!xrSession) console.warn('onXRFrame: xrSession is null');
@@ -492,20 +505,29 @@ function onXRFrame(time, frame) {
         return;
     }
 
+    // CRITICAL FIX 10: DO NOT return early if pose is null!
+    // On Android, pose might not be available immediately, but we MUST continue
+    // the animation loop to keep the session alive and show the camera feed.
+    // In WebXR mode, Three.js automatically renders - we don't need to call render manually.
     const pose = frame.getViewerPose(xrReferenceSpace);
     if (!pose) {
-        // CRITICAL FIX 8: Log when pose is unavailable (common on Android during initialization)
-        // Don't log every frame, only occasionally to avoid spam
+        // Log occasionally to avoid spam
         if (Math.random() < 0.01) { // Log ~1% of the time
-            console.warn('onXRFrame: Viewer pose not available (this is normal during initialization)');
+            console.warn('onXRFrame: Viewer pose not available (animation loop continues for camera feed)');
         }
-        return;
+        // CRITICAL: Do NOT return early! Continue to the render call at the end.
+        // The animation loop must continue to keep the camera feed visible.
+        // We'll just skip camera/pose updates but still render.
     }
 
-    // Update camera
-    const view = pose.views[0];
-    camera.position.setFromMatrixPosition(view.transform.matrix);
-    camera.quaternion.setFromRotationMatrix(view.transform.matrix);
+    // Update camera with pose data (only if pose is available)
+    if (pose && pose.views && pose.views.length > 0) {
+        const view = pose.views[0];
+        if (view && view.transform && view.transform.matrix) {
+            camera.position.setFromMatrixPosition(view.transform.matrix);
+            camera.quaternion.setFromRotationMatrix(view.transform.matrix);
+        }
+    }
 
     // Handle image tracking results if available
     // Check if image tracking is enabled and the API is available
