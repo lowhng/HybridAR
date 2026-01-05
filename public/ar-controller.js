@@ -50,6 +50,16 @@ async function initializeAR() {
         if (capabilities.useWebXR) {
             // Load and initialize WebXR
             await loadWebXR();
+            
+            // Show instruction for WebXR users
+            const instruction = document.getElementById('webxr-instruction');
+            if (instruction) {
+                instruction.classList.remove('hidden');
+                // Auto-hide after animation completes
+                setTimeout(() => {
+                    instruction.classList.add('hidden');
+                }, 4000);
+            }
         } else {
             // Load and initialize MindAR
             await loadMindAR();
