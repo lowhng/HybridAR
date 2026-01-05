@@ -137,10 +137,10 @@ async function initWebXR() {
     try {
         console.log('Requesting WebXR session...');
         
-        // Request session - hit-test is optional as it may not be available on all devices
+        // Request session - don't require any specific reference space
+        // We'll request the reference space after session starts
         xrSession = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: ['local'],
-            optionalFeatures: ['hit-test', 'dom-overlay'],
+            optionalFeatures: ['local', 'local-floor', 'hit-test', 'dom-overlay'],
             domOverlay: { root: document.body }
         });
 
@@ -151,9 +151,22 @@ async function initWebXR() {
         await renderer.xr.setSession(xrSession);
         console.log('Renderer connected to XR session');
         
-        // Get reference space
-        xrReferenceSpace = await xrSession.requestReferenceSpace('local');
-        console.log('Reference space obtained');
+        // Try different reference space types in order of preference
+        const referenceSpaceTypes = ['local-floor', 'local', 'viewer'];
+        
+        for (const spaceType of referenceSpaceTypes) {
+            try {
+                xrReferenceSpace = await xrSession.requestReferenceSpace(spaceType);
+                console.log(`Reference space obtained: ${spaceType}`);
+                break;
+            } catch (e) {
+                console.warn(`Reference space '${spaceType}' not supported, trying next...`);
+            }
+        }
+        
+        if (!xrReferenceSpace) {
+            throw new Error('No supported reference space type found on this device.');
+        }
         
         // Try to set up hit-test source for surface detection
         const hasHitTest = xrSession.enabledFeatures && 
