@@ -111,8 +111,32 @@ async function initWebXR() {
         throw new Error('WebXR immersive-ar is not supported on this device.');
     }
 
-    // Create Three.js scene
+    // CRITICAL FIX 1: Request camera permissions before starting WebXR session
+    // Android Chrome requires explicit camera permission for WebXR camera feed
+    console.log('Requesting camera permissions...');
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        // Stop the test stream immediately - we just needed permission
+        stream.getTracks().forEach(track => track.stop());
+        console.log('Camera permissions granted');
+    } catch (permError) {
+        console.error('Camera permission error:', permError);
+        if (permError.name === 'NotAllowedError' || permError.name === 'PermissionDeniedError') {
+            throw new Error('Camera permission denied. Please allow camera access in your browser settings and try again.');
+        } else if (permError.name === 'NotFoundError') {
+            throw new Error('No camera found. Please ensure your device has a camera.');
+        } else {
+            throw new Error(`Camera access failed: ${permError.message || permError.name}. WebXR requires camera access to display the AR view.`);
+        }
+    }
+
+    // Create Three.js scene with transparent background
     scene = new THREE.Scene();
+    // CRITICAL FIX 2: Explicitly set scene background to null/transparent
+    // This ensures the camera feed shows through
+    scene.background = null;
+    scene.fog = null;
+    
     camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 100);
     
     // Create WebGL renderer with XR enabled
@@ -121,12 +145,52 @@ async function initWebXR() {
         alpha: true,  // Transparent background for AR camera feed
         canvas: document.createElement('canvas')
     });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    
+    // CRITICAL FIX 3: Use more robust viewport sizing for Android
+    const width = Math.max(window.innerWidth, screen.width || 640);
+    const height = Math.max(window.innerHeight, screen.height || 480);
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // Cap pixel ratio for performance
     renderer.xr.enabled = true;
-    // For AR, we want the camera feed to show through
-    // Three.js XR renderer handles this automatically when connected to session
-    _webxr_arContainer.appendChild(renderer.domElement);
+    
+    // Ensure renderer clears with transparent background
+    renderer.setClearColor(0x000000, 0); // Black with 0 alpha = transparent
+    
+    // Append canvas to container
+    const canvas = renderer.domElement;
+    // CRITICAL FIX 4a: Ensure canvas has proper styling for Android
+    canvas.style.display = 'block';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.position = 'absolute';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    _webxr_arContainer.appendChild(canvas);
+    
+    // CRITICAL FIX 4b: Ensure canvas is visible and rendered before proceeding
+    // Android Chrome needs the canvas to be in the DOM and visible before XR session connection
+    console.log('Ensuring canvas is ready...');
+    await new Promise(resolve => {
+        // Wait for next frame to ensure canvas is rendered
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // Verify canvas is actually in the DOM and has dimensions
+                if (canvas.offsetWidth === 0 || canvas.offsetHeight === 0) {
+                    console.warn('Canvas has zero dimensions, forcing size...');
+                    canvas.style.width = width + 'px';
+                    canvas.style.height = height + 'px';
+                }
+                console.log('Canvas ready:', {
+                    width: canvas.offsetWidth,
+                    height: canvas.offsetHeight,
+                    inDOM: document.body.contains(canvas) || _webxr_arContainer.contains(canvas),
+                    display: window.getComputedStyle(canvas).display,
+                    visibility: window.getComputedStyle(canvas).visibility
+                });
+                resolve();
+            });
+        });
+    });
 
     // Create content group
     contentGroup = new THREE.Group();
@@ -159,14 +223,31 @@ async function initWebXR() {
             optionalFeatures: ['image-tracking']
         };
         
+        console.log('Requesting WebXR session...');
         xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptions);
 
         console.log('WebXR session started');
         // enabledFeatures is already an array
         console.log('Enabled features:', xrSession.enabledFeatures);
+        
+        // CRITICAL FIX 5: Verify session state before connecting renderer
+        if (xrSession.state !== 'running' && xrSession.state !== 'visible') {
+            console.warn('Session state is:', xrSession.state, '- waiting for running state...');
+            // Wait a brief moment for session to be ready (Android sometimes needs this)
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
 
-        // CRITICAL: Connect renderer to XR session - this makes camera feed appear
+        // CRITICAL FIX 6: Connect renderer to XR session - this makes camera feed appear
+        // On Android, this must happen after canvas is visible and session is ready
+        console.log('Connecting renderer to XR session...');
         renderer.xr.setSession(xrSession);
+        
+        // Verify connection was successful
+        if (!renderer.xr.isPresenting) {
+            console.warn('Renderer not presenting after setSession - this may cause issues');
+        } else {
+            console.log('Renderer successfully connected to XR session');
+        }
 
         // Set up reference space
         xrReferenceSpace = await xrSession.requestReferenceSpace('local');
@@ -186,7 +267,21 @@ async function initWebXR() {
         }
 
         // Set up render loop
+        console.log('Starting render loop...');
         renderer.setAnimationLoop(onXRFrame);
+        
+        // CRITICAL FIX 9: Force an initial render to trigger camera feed
+        // Android sometimes needs an explicit render call to start the camera feed
+        requestAnimationFrame(() => {
+            if (renderer && scene && camera) {
+                try {
+                    renderer.render(scene, camera);
+                    console.log('Initial render completed - camera feed should now be visible');
+                } catch (renderError) {
+                    console.warn('Initial render failed (this may be normal):', renderError);
+                }
+            }
+        });
 
         // Handle session end
         xrSession.addEventListener('end', () => {
@@ -390,10 +485,22 @@ if (typeof window !== 'undefined' && window.WebXRAR) {
 // ============================================================================
 
 function onXRFrame(time, frame) {
-    if (!xrSession || !xrReferenceSpace) return;
+    if (!xrSession || !xrReferenceSpace) {
+        // CRITICAL FIX 7: Log early returns for debugging
+        if (!xrSession) console.warn('onXRFrame: xrSession is null');
+        if (!xrReferenceSpace) console.warn('onXRFrame: xrReferenceSpace is null');
+        return;
+    }
 
     const pose = frame.getViewerPose(xrReferenceSpace);
-    if (!pose) return;
+    if (!pose) {
+        // CRITICAL FIX 8: Log when pose is unavailable (common on Android during initialization)
+        // Don't log every frame, only occasionally to avoid spam
+        if (Math.random() < 0.01) { // Log ~1% of the time
+            console.warn('onXRFrame: Viewer pose not available (this is normal during initialization)');
+        }
+        return;
+    }
 
     // Update camera
     const view = pose.views[0];
