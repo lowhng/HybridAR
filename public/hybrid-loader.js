@@ -115,3 +115,5 @@ window.initializeAR = initializeAR;
 window.detectPlatform = detectPlatform;
 window.checkWebXRSupport = checkWebXRSupport;
 
+
+

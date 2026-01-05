@@ -91,3 +91,5 @@ MindAR/
 - HTTPS connection (required for camera access)
 - Image target file (`targets.mind`)
 
+
+
