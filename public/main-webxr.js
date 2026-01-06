@@ -17,6 +17,7 @@ let isAnchored = false;
 let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
+let currentSurfaceType = null; // 'floor' or 'wall'
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -25,6 +26,9 @@ let scene, camera, renderer;
 let contentGroup;
 let cubeMesh;
 let reticle; // Visual indicator for placement
+let reticleFloorGeometry; // Ring geometry for floor
+let reticleWallGeometry; // Crosshair geometry for wall
+let reticleMaterial; // Material that changes color
 let animationTime = 0;
 
 // ============================================================================
@@ -113,14 +117,57 @@ async function initWebXR() {
     cubeMesh.position.set(0, 0.05, 0); // Raise slightly above surface
     contentGroup.add(cubeMesh);
 
-    // Create reticle for hit-test visualization
-    const reticleGeometry = new THREE.RingGeometry(0.05, 0.07, 32).rotateX(-Math.PI / 2);
-    const reticleMaterial = new THREE.MeshBasicMaterial({ 
-        color: 0xffffff,
+    // Create reticle geometries for floor and wall
+    // Floor: Ring geometry
+    reticleFloorGeometry = new THREE.RingGeometry(0.05, 0.07, 32).rotateX(-Math.PI / 2);
+    
+    // Wall: Crosshair geometry (plus shape) - create manually with BufferGeometry
+    const crosshairSize = 0.07;
+    const crosshairThickness = 0.01;
+    const halfSize = crosshairSize;
+    const halfThick = crosshairThickness / 2;
+    
+    // Create vertices for a plus shape (crosshair)
+    // Horizontal line: 4 vertices forming a rectangle
+    // Vertical line: 4 vertices forming a rectangle
+    const vertices = new Float32Array([
+        // Horizontal line (centered at y=0)
+        -halfSize, -halfThick, 0,  // 0: bottom-left
+        halfSize, -halfThick, 0,   // 1: bottom-right
+        halfSize, halfThick, 0,    // 2: top-right
+        -halfSize, halfThick, 0,   // 3: top-left
+        // Vertical line (centered at x=0, but offset to avoid overlap)
+        -halfThick, -halfSize, 0,  // 4: bottom-left
+        halfThick, -halfSize, 0,   // 5: bottom-right
+        halfThick, halfSize, 0,    // 6: top-right
+        -halfThick, halfSize, 0    // 7: top-left
+    ]);
+    
+    // Create indices for two quads
+    const indices = new Uint16Array([
+        // Horizontal quad
+        0, 1, 2,
+        0, 2, 3,
+        // Vertical quad
+        4, 5, 6,
+        4, 6, 7
+    ]);
+    
+    reticleWallGeometry = new THREE.BufferGeometry();
+    reticleWallGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    reticleWallGeometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    reticleWallGeometry.computeVertexNormals();
+    reticleWallGeometry.rotateX(-Math.PI / 2);
+    
+    // Create reticle material (color will change based on surface type)
+    reticleMaterial = new THREE.MeshBasicMaterial({ 
+        color: 0x00ffff, // Cyan for floor (default)
         opacity: 0.8,
         transparent: true
     });
-    reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+    
+    // Start with floor geometry
+    reticle = new THREE.Mesh(reticleFloorGeometry, reticleMaterial);
     reticle.matrixAutoUpdate = false;
     reticle.visible = false;
     scene.add(reticle);
@@ -259,6 +306,71 @@ function setupTapToPlace() {
 }
 
 // ============================================================================
+// SURFACE TYPE DETECTION
+// ============================================================================
+
+/**
+ * Detects if a surface is a wall or floor based on the hit-test pose
+ * @param {XRPose} hitPose - The pose from hit-test result
+ * @returns {string} 'wall' or 'floor'
+ */
+function detectSurfaceType(hitPose) {
+    if (!hitPose || !hitPose.transform) {
+        return 'floor'; // Default to floor
+    }
+    
+    // Extract transform matrix
+    const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix);
+    
+    // Extract the Z-axis (normal vector) from the transform matrix
+    // In a 4x4 transform matrix, the Z-axis is in the third column (indices 8, 9, 10)
+    const normal = new THREE.Vector3();
+    normal.setFromMatrixColumn(matrix, 2);
+    normal.normalize();
+    
+    // Up vector (Y-axis)
+    const up = new THREE.Vector3(0, 1, 0);
+    
+    // Calculate dot product to determine angle
+    // If normal is pointing up (floor), dot product is close to 1
+    // If normal is horizontal (wall), dot product is close to 0
+    const dotProduct = Math.abs(normal.dot(up));
+    
+    // Threshold: if dot product < 0.5, it's a wall (normal is mostly horizontal)
+    // Otherwise, it's a floor (normal is mostly vertical/up)
+    const surfaceType = dotProduct < 0.5 ? 'wall' : 'floor';
+    
+    return surfaceType;
+}
+
+/**
+ * Updates reticle appearance based on surface type
+ * @param {string} surfaceType - 'wall' or 'floor'
+ */
+function updateReticleAppearance(surfaceType) {
+    if (currentSurfaceType === surfaceType) {
+        return; // No change needed
+    }
+    
+    currentSurfaceType = surfaceType;
+    
+    // Update geometry
+    const oldGeometry = reticle.geometry;
+    if (surfaceType === 'wall') {
+        reticle.geometry = reticleWallGeometry;
+        reticleMaterial.color.setHex(0xff6b35); // Orange/red for wall
+    } else {
+        reticle.geometry = reticleFloorGeometry;
+        reticleMaterial.color.setHex(0x00ffff); // Cyan/blue for floor
+    }
+    
+    // Dispose old geometry if it's not one of our shared geometries
+    if (oldGeometry !== reticleFloorGeometry && oldGeometry !== reticleWallGeometry) {
+        oldGeometry.dispose();
+    }
+}
+
+// ============================================================================
 // RENDER LOOP
 // ============================================================================
 
@@ -290,15 +402,21 @@ function onXRFrame(timestamp, frame) {
                 const hitPose = hit.getPose(xrReferenceSpace);
                 
                 if (hitPose) {
+                    // Detect surface type
+                    const surfaceType = detectSurfaceType(hitPose);
+                    updateReticleAppearance(surfaceType);
+                    
                     reticle.visible = true;
                     reticle.matrix.fromArray(hitPose.transform.matrix);
                 }
             } else {
                 reticle.visible = false;
+                currentSurfaceType = null;
             }
         } catch (error) {
             // Hit-test might fail occasionally, just hide reticle
             reticle.visible = false;
+            currentSurfaceType = null;
         }
     } else if (!xrHitTestSource && !isAnchored) {
         // No hit-test available - show reticle in center as tap indicator
@@ -320,6 +438,9 @@ function onXRFrame(timestamp, frame) {
             reticle.lookAt(position);
             reticle.visible = true;
             reticle.matrixAutoUpdate = true;
+            
+            // Default to floor appearance when no hit-test
+            updateReticleAppearance('floor');
         }
     }
 
@@ -351,9 +472,22 @@ function onWindowResize() {
 function resetAnchor() {
     isAnchored = false;
     contentGroup.visible = false;
+    
+    // Reset reticle state properly
     if (xrHitTestSource) {
+        // When hit-test is available, use matrix updates from hit-test
+        reticle.matrixAutoUpdate = false;
         reticle.visible = true;
+        // Reset surface type so it will be detected again
+        currentSurfaceType = null;
+    } else {
+        // When no hit-test, use position-based updates
+        reticle.matrixAutoUpdate = true;
+        reticle.visible = true;
+        // Default to floor appearance
+        updateReticleAppearance('floor');
     }
+    
     console.log('Anchor reset - tap to place again');
 }
 
