@@ -223,10 +223,23 @@ async function initWebXR() {
         if (hasHitTest) {
             try {
                 const viewerSpace = await xrSession.requestReferenceSpace('viewer');
-                xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
-                console.log('Hit-test source created - tap surfaces to place content');
+                // Request hit-test source - some devices may support vertical planes
+                // Try to create hit-test source that can detect both horizontal and vertical planes
+                try {
+                    xrHitTestSource = await xrSession.requestHitTestSource({ 
+                        space: viewerSpace,
+                        // Some implementations support offsetRay for better detection
+                        // but this is optional and may not be supported
+                    });
+                    console.log('Hit-test source created - tap surfaces to place content');
+                } catch (hitTestError) {
+                    // Fallback: try without options
+                    xrHitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+                    console.log('Hit-test source created (fallback method)');
+                }
             } catch (hitTestError) {
                 console.warn('Hit-test setup failed:', hitTestError);
+                console.warn('Note: Some Android devices may only detect horizontal surfaces (floors)');
             }
         } else {
             console.log('Hit-test not available - content will be placed in front of camera on tap');
@@ -322,23 +335,52 @@ function detectSurfaceType(hitPose) {
     // Extract transform matrix
     const matrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix);
     
-    // Extract the Z-axis (normal vector) from the transform matrix
-    // In a 4x4 transform matrix, the Z-axis is in the third column (indices 8, 9, 10)
-    const normal = new THREE.Vector3();
-    normal.setFromMatrixColumn(matrix, 2);
-    normal.normalize();
+    // Extract the Y-axis (up vector) from the transform matrix
+    // The Y-axis of the transform tells us the orientation of the surface
+    // For a floor (horizontal), Y-axis points up (close to world Y: 0, 1, 0)
+    // For a wall (vertical), Y-axis points horizontally (Y component close to 0)
+    const upVector = new THREE.Vector3();
+    upVector.setFromMatrixColumn(matrix, 1);
+    upVector.normalize();
     
-    // Up vector (Y-axis)
-    const up = new THREE.Vector3(0, 1, 0);
+    // World up vector
+    const worldUp = new THREE.Vector3(0, 1, 0);
     
-    // Calculate dot product to determine angle
-    // If normal is pointing up (floor), dot product is close to 1
-    // If normal is horizontal (wall), dot product is close to 0
-    const dotProduct = Math.abs(normal.dot(up));
+    // Calculate dot product to determine how vertical the surface is
+    // If Y-axis is pointing up (floor), dot product is close to 1
+    // If Y-axis is horizontal (wall), dot product is close to 0
+    const dotProduct = Math.abs(upVector.dot(worldUp));
     
-    // Threshold: if dot product < 0.5, it's a wall (normal is mostly horizontal)
-    // Otherwise, it's a floor (normal is mostly vertical/up)
-    const surfaceType = dotProduct < 0.5 ? 'wall' : 'floor';
+    // Also check the Y component directly as an alternative method
+    const yComponent = Math.abs(upVector.y);
+    
+    // Debug logging (can be removed later)
+    if (frameCount % 60 === 0) {
+        console.log('Surface detection - Y-axis:', 
+            `(${upVector.x.toFixed(2)}, ${upVector.y.toFixed(2)}, ${upVector.z.toFixed(2)})`, 
+            'dot product:', dotProduct.toFixed(2), 
+            'Y component:', yComponent.toFixed(2));
+    }
+    
+    // Threshold: if Y component < 0.7, it's a wall (Y-axis is mostly horizontal)
+    // Otherwise, it's a floor (Y-axis is mostly vertical/up)
+    // Using Y component directly as it's more reliable
+    // Lower threshold (0.5) to be more sensitive to walls
+    const surfaceType = yComponent < 0.5 ? 'wall' : 'floor';
+    
+    // Additional check: if the surface normal (Z-axis) is pointing horizontally
+    // This is a secondary check for wall detection
+    const zAxis = new THREE.Vector3();
+    zAxis.setFromMatrixColumn(matrix, 2);
+    zAxis.normalize();
+    const zVertical = Math.abs(zAxis.dot(worldUp));
+    
+    // If Z-axis is also horizontal (not pointing up/down), it's more likely a wall
+    if (yComponent < 0.7 && zVertical < 0.7) {
+        return 'wall';
+    }
+    
+    return surfaceType;
     
     return surfaceType;
 }
@@ -404,10 +446,17 @@ function onXRFrame(timestamp, frame) {
                 if (hitPose) {
                     // Detect surface type
                     const surfaceType = detectSurfaceType(hitPose);
+                    
+                    // Log surface type changes
+                    if (surfaceType !== currentSurfaceType) {
+                        console.log('Surface type detected:', surfaceType);
+                    }
+                    
                     updateReticleAppearance(surfaceType);
                     
                     reticle.visible = true;
                     reticle.matrix.fromArray(hitPose.transform.matrix);
+                    reticle.matrixAutoUpdate = false; // Ensure this is set correctly
                 }
             } else {
                 reticle.visible = false;
@@ -415,6 +464,7 @@ function onXRFrame(timestamp, frame) {
             }
         } catch (error) {
             // Hit-test might fail occasionally, just hide reticle
+            console.warn('Hit-test error:', error);
             reticle.visible = false;
             currentSurfaceType = null;
         }
@@ -470,8 +520,32 @@ function onWindowResize() {
 // ============================================================================
 
 function resetAnchor() {
+    console.log('Reset button pressed - resetting anchor...');
+    
     isAnchored = false;
-    contentGroup.visible = false;
+    
+    // Force hide the content group and all its children
+    if (contentGroup) {
+        contentGroup.visible = false;
+        // Also reset position to ensure it's not visible
+        contentGroup.position.set(0, 0, 0);
+        contentGroup.rotation.set(0, 0, 0);
+        contentGroup.scale.set(1, 1, 1);
+        
+        // Also hide individual children as a safety measure
+        contentGroup.children.forEach(child => {
+            if (child.visible !== undefined) {
+                child.visible = false;
+            }
+        });
+        
+        console.log('Content group hidden and position reset');
+    }
+    
+    // Reset cube mesh visibility directly as well
+    if (cubeMesh) {
+        cubeMesh.visible = false;
+    }
     
     // Reset reticle state properly
     if (xrHitTestSource) {
@@ -488,7 +562,7 @@ function resetAnchor() {
         updateReticleAppearance('floor');
     }
     
-    console.log('Anchor reset - tap to place again');
+    console.log('Anchor reset complete - isAnchored:', isAnchored, 'contentGroup.visible:', contentGroup ? contentGroup.visible : 'N/A');
 }
 
 // ============================================================================
