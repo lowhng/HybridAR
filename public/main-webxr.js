@@ -57,7 +57,7 @@ async function initWebXR() {
         throw new Error('THREE.js is not loaded. Please ensure Three.js is loaded before this script.');
     }
     
-    // Check WebXR support
+    // Check WebXR support with defensive checks
     if (!navigator.xr) {
         const error = 'WebXR is not supported on this device. Please use an Android device with Chrome or iOS with Variant Launch.';
         console.error(error);
@@ -66,8 +66,29 @@ async function initWebXR() {
         }
         throw new Error(error);
     }
+    
+    // Ensure navigator.xr has the required methods
+    if (typeof navigator.xr.isSessionSupported !== 'function') {
+        const error = 'WebXR API is not properly initialized. Please refresh the page and try again.';
+        console.error(error);
+        if (window.Toast) {
+            window.Toast.error(error, 'WebXR API Error', 8000);
+        }
+        throw new Error(error);
+    }
 
-    const isSupported = await navigator.xr.isSessionSupported('immersive-ar');
+    let isSupported = false;
+    try {
+        isSupported = await navigator.xr.isSessionSupported('immersive-ar');
+    } catch (supportError) {
+        console.error('Error checking session support:', supportError);
+        const error = `Failed to check WebXR support: ${supportError.message || supportError}`;
+        if (window.Toast) {
+            window.Toast.error(error, 'WebXR Check Failed', 8000);
+        }
+        throw new Error(error);
+    }
+    
     if (!isSupported) {
         const error = 'WebXR immersive-ar is not supported on this device.';
         console.error(error);
@@ -232,14 +253,62 @@ async function initWebXR() {
             visible: renderer.domElement.style.visibility !== 'hidden'
         });
         
+        // CRITICAL for iOS/Variant Launch: Give the SDK a moment to be fully ready
+        // This prevents the SDK from trying to process session requests before it's initialized
+        const platform = window.PlatformDetector?.detectPlatform?.() || { isIOS: false };
+        if (platform.isIOS) {
+            console.log('iOS detected - waiting for Variant Launch SDK to be fully ready...');
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        
+        // Ensure navigator.xr.requestSession exists and is a function
+        if (typeof navigator.xr.requestSession !== 'function') {
+            throw new Error('navigator.xr.requestSession is not available. The WebXR API may not be fully initialized.');
+        }
+        
         // Request session - don't require any specific reference space
         // We'll request the reference space after session starts.
         // NOTE: We intentionally avoid requesting DOM overlay here because
         // some iOS WebXR viewers (including Variant Launch) can show a black
         // screen if dom-overlay is requested but not fully supported.
-        xrSession = await navigator.xr.requestSession('immersive-ar', {
+        // 
+        // CRITICAL for Variant Launch SDK: Ensure session options are properly structured
+        // The SDK may try to access requiredFeatures, so we explicitly set it to an empty array
+        // to prevent "undefined is not an object" errors
+        const sessionOptions = {
+            requiredFeatures: [], // Explicitly set to empty array to prevent SDK errors
             optionalFeatures: ['local', 'local-floor', 'hit-test']
-        });
+        };
+        
+        // Ensure the options object is properly structured and not null/undefined
+        // This prevents the SDK from receiving undefined when it expects an object
+        if (!sessionOptions || typeof sessionOptions !== 'object') {
+            throw new Error('Session options object is invalid');
+        }
+        
+        console.log('Requesting session with options:', sessionOptions);
+        
+        // Wrap in try-catch to provide better error messages
+        try {
+            xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptions);
+        } catch (sessionError) {
+            // Provide more detailed error information
+            console.error('Session request failed:', sessionError);
+            console.error('Session error details:', {
+                name: sessionError.name,
+                message: sessionError.message,
+                stack: sessionError.stack
+            });
+            
+            if (sessionError.message && sessionError.message.includes('requiredFeatures')) {
+                throw new Error('WebXR session request failed due to feature configuration. This may be a Variant Launch SDK initialization issue. Please try refreshing the page.');
+            }
+            
+            // Re-throw with additional context
+            const enhancedError = new Error(`Failed to start WebXR session: ${sessionError.message || sessionError}`);
+            enhancedError.originalError = sessionError;
+            throw enhancedError;
+        }
 
         console.log('WebXR session started successfully');
         console.log('Session features:', xrSession.enabledFeatures);
