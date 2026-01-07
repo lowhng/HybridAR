@@ -1,5 +1,5 @@
 // Unified AR Controller
-// Routes to WebXR or MindAR based on platform detection
+// WebXR-only controller (Variant Launch handles iOS WebXR viewer)
 
 // ============================================================================
 // STATE
@@ -26,43 +26,47 @@ async function initializeAR() {
     
     capabilities = await window.PlatformDetector.detectARCapabilities();
     
-    console.log('Initializing AR system:', capabilities.useWebXR ? 'WebXR' : 'MindAR');
+    console.log('Initializing AR system:', capabilities.useWebXR ? 'WebXR' : 'None');
+
+    // If WebXR is not available, show a helpful message and bail out
+    if (!capabilities.webxrSupported || !capabilities.useWebXR) {
+        const msg = 'WebXR immersive-ar is not supported on this device or browser.\n\n' +
+            'Please open this experience in a WebXR-capable browser. On iOS, use the Variant Launch viewer; ' +
+            'on Android, use Chrome.';
+        alert(msg);
+
+        if (startButton) {
+            startButton.disabled = false;
+            startButton.textContent = 'Start AR';
+        }
+        if (resetButton) {
+            resetButton.classList.add('hidden');
+        }
+        return;
+    }
     
-    // Hide start button and camera selector
+    // Hide start button
     if (startButton) {
         startButton.classList.add('hidden');
     }
-    const cameraSelectorEl = document.getElementById('camera-selector');
-    if (cameraSelectorEl) {
-        cameraSelectorEl.classList.add('hidden');
-    }
     
-    // Show/hide reset button based on system
+    // Show reset button for WebXR
     if (resetButton) {
-        if (capabilities.useWebXR) {
-            resetButton.classList.remove('hidden');
-        } else {
-            resetButton.classList.add('hidden');
-        }
+        resetButton.classList.remove('hidden');
     }
     
     try {
-        if (capabilities.useWebXR) {
-            // Load and initialize WebXR
-            await loadWebXR();
-            
-            // Show instruction for WebXR users
-            const instruction = document.getElementById('webxr-instruction');
-            if (instruction) {
-                instruction.classList.remove('hidden');
-                // Auto-hide after animation completes
-                setTimeout(() => {
-                    instruction.classList.add('hidden');
-                }, 4000);
-            }
-        } else {
-            // Load and initialize MindAR
-            await loadMindAR();
+        // Load and initialize WebXR
+        await loadWebXR();
+        
+        // Show instruction for WebXR users
+        const instruction = document.getElementById('webxr-instruction');
+        if (instruction) {
+            instruction.classList.remove('hidden');
+            // Auto-hide after animation completes
+            setTimeout(() => {
+                instruction.classList.add('hidden');
+            }, 4000);
         }
     } catch (error) {
         console.error('Failed to initialize AR system:', error);

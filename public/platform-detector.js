@@ -1,5 +1,5 @@
 // Platform Detection Module
-// Detects Android/iOS and WebXR support for hybrid AR routing
+// Detects platform and WebXR support for routing to WebXR (Variant Launch handles iOS viewer)
 
 // ============================================================================
 // PLATFORM DETECTION
@@ -78,14 +78,15 @@ async function detectARCapabilities() {
     const capabilities = {
         platform,
         webxrSupported,
-        useWebXR: platform.isAndroid && webxrSupported,
-        useMindAR: !webxrSupported || platform.isIOS
+        // With Variant Launch, iOS gets a WebXR-capable viewer, so we always prefer WebXR
+        useWebXR: webxrSupported,
+        useMindAR: false
     };
     
     console.log('AR Capabilities Detection:', {
         platform: platform.isIOS ? 'iOS' : platform.isAndroid ? 'Android' : 'Other',
         webxrSupported,
-        willUse: capabilities.useWebXR ? 'WebXR' : 'MindAR'
+        willUse: capabilities.useWebXR ? 'WebXR' : 'None (no fallback)'
     });
     
     return capabilities;

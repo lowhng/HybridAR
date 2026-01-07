@@ -4,20 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>MindAR Image Tracking</title>
+    <title>WebXR AR Experience</title>
     <link rel="stylesheet" href="styles.css">
+    <!-- Variant Launch SDK: enables WebXR immersive-ar on iOS and other platforms -->
+    <script src="https://launchar.app/sdk/v1?key=tF9tOpUzqoCcVs7jfwxWUSBKZv6OF8zp&redirect=true"></script>
 </head>
 <body>
     <!-- AR Canvas Container -->
     <div id="ar-container"></div>
-
-    <!-- Camera Selection (initially hidden) -->
-    <div id="camera-selector" class="camera-selector hidden">
-        <label for="camera-select">Select Camera:</label>
-        <select id="camera-select" class="camera-select">
-            <option value="">Loading cameras...</option>
-        </select>
-    </div>
 
     <!-- Start AR Button -->
     <button id="start-button" class="start-button">Start AR</button>
@@ -32,36 +26,12 @@
 
     <!-- Load Three.js as regular script (compatible) -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
-    
-    <!-- Load MindAR as regular script tag (for fallback) -->
-    <script src="https://cdn.jsdelivr.net/gh/hiukim/mind-ar-js@1.1.4/dist/mindar-image-three.prod.js"></script>
-    
+
     <!-- Load Platform Detector first -->
     <script src="platform-detector.js"></script>
     
-    <!-- Load AR Controller (handles routing to WebXR or MindAR) -->
+    <!-- Load AR Controller (WebXR-only, will dynamically load main-webxr.js) -->
     <script src="ar-controller.js"></script>
-    
-    <!-- MindAR library setup (ensures MindARThree is available) -->
-    <script>
-        // Wait for MindAR library to load and expose MindARThree
-        window.addEventListener('load', function() {
-            // Try to find MindARThree from the MINDAR library
-            if (typeof MindARThree === 'undefined' && window.MINDAR && window.MINDAR.IMAGE) {
-                // Try common patterns
-                if (window.MINDAR.IMAGE.Three) {
-                    window.MindARThree = window.MINDAR.IMAGE.Three;
-                    console.log('✅ Found MindARThree in MINDAR.IMAGE.Three');
-                } else if (window.MINDAR.IMAGE.MindARThree) {
-                    window.MindARThree = window.MINDAR.IMAGE.MindARThree;
-                    console.log('✅ Found MindARThree in MINDAR.IMAGE.MindARThree');
-                } else if (typeof window.MINDAR.IMAGE === 'function') {
-                    window.MindARThree = window.MINDAR.IMAGE;
-                    console.log('✅ MINDAR.IMAGE is the constructor');
-                }
-            }
-        });
-    </script>
 </body>
 </html>
 
