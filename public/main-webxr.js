@@ -504,33 +504,87 @@ async function createContentForSurface(surfaceType) {
             window.Toast.info('Loading wire model...', 'Loading', 2000);
         }
         
-        // Check if GLTFLoader is available (might be loaded asynchronously)
-        // Wait a bit for GLTFLoader to load if it's not immediately available
-        let GLTFLoader = THREE?.GLTFLoader || window.THREE?.GLTFLoader;
-        
-        if (!GLTFLoader) {
-            console.log('GLTFLoader not immediately available, waiting...');
-            // Wait up to 2 seconds for GLTFLoader to load
-            for (let i = 0; i < 20; i++) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                GLTFLoader = THREE?.GLTFLoader || window.THREE?.GLTFLoader;
-                if (GLTFLoader) {
-                    console.log('GLTFLoader became available');
-                    break;
-                }
+        /**
+         * Ensure GLTFLoader is available.
+         * 1) Prefer already-loaded THREE.GLTFLoader (from index.html script tag)
+         * 2) If missing, dynamically load GLTFLoader from a secondary CDN
+         */
+        async function ensureGLTFLoader() {
+            // Case 1: already present
+            if (window.THREE && window.THREE.GLTFLoader) {
+                console.log('GLTFLoader found on window.THREE');
+                return window.THREE.GLTFLoader;
+            }
+            
+            console.warn('GLTFLoader not found on window.THREE, loading dynamically from CDN fallback...');
+            
+            // Case 2: dynamically inject script from alternate CDN
+            const existingScript = document.querySelector('script[data-dynamic-gltfloader="true"]');
+            if (existingScript) {
+                // If a dynamic script already exists, wait for it to finish
+                console.log('Dynamic GLTFLoader script tag already present, waiting for it to load...');
+                await new Promise((resolve) => {
+                    if (window.THREE && window.THREE.GLTFLoader) {
+                        resolve();
+                        return;
+                    }
+                    const checkInterval = setInterval(() => {
+                        if (window.THREE && window.THREE.GLTFLoader) {
+                            clearInterval(checkInterval);
+                            resolve();
+                        }
+                    }, 100);
+                    // Give up after 5 seconds
+                    setTimeout(() => {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }, 5000);
+                });
+                return window.THREE && window.THREE.GLTFLoader ? window.THREE.GLTFLoader : null;
+            }
+            
+            const script = document.createElement('script');
+            script.src = 'https://unpkg.com/three@0.149.0/examples/js/loaders/GLTFLoader.js';
+            script.async = true;
+            script.setAttribute('data-dynamic-gltfloader', 'true');
+            
+            const loadPromise = new Promise((resolve, reject) => {
+                script.onload = () => {
+                    console.log('Dynamic GLTFLoader script loaded from unpkg');
+                    if (window.THREE && window.THREE.GLTFLoader) {
+                        resolve(window.THREE.GLTFLoader);
+                    } else {
+                        reject(new Error('GLTFLoader script loaded but THREE.GLTFLoader is still undefined.'));
+                    }
+                };
+                script.onerror = (err) => {
+                    console.error('Dynamic GLTFLoader script failed to load:', err);
+                    reject(new Error('Failed to load GLTFLoader from CDN fallback.'));
+                };
+            });
+            
+            document.head.appendChild(script);
+            
+            try {
+                return await loadPromise;
+            } catch (e) {
+                console.error('ensureGLTFLoader failed:', e);
+                return null;
             }
         }
         
-        if (!GLTFLoader) {
-            console.error('GLTFLoader not available after waiting. Falling back to orange box for wall.');
+        const GLTFLoaderCtor = await ensureGLTFLoader();
+        
+        if (!GLTFLoaderCtor) {
+            console.error('GLTFLoader still not available after dynamic load. Falling back to orange box for wall.');
             if (window.Toast) {
-                window.Toast.warning('Model loader not available, using placeholder', 'Warning', 3000);
+                window.Toast.warning('Model loader not available (even after dynamic load), using placeholder', 'Warning', 4000);
             }
             createWallPlaceholder();
             return;
         }
         
-        const loader = new GLTFLoader();
+        const loader = new GLTFLoaderCtor();
         try {
             console.log('=== WIRE.GLB LOADING START ===');
             console.log('GLTFLoader available:', !!GLTFLoader);
