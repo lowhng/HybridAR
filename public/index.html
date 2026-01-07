@@ -35,7 +35,64 @@
          cannot resolve, which was causing the "Module name, 'three' does not resolve
          to a valid URL" error. -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // Verify THREE loaded correctly
+        if (typeof THREE === 'undefined') {
+            console.error('THREE.js failed to load!');
+        } else {
+            console.log('THREE.js loaded successfully, version:', THREE.REVISION);
+        }
+    </script>
+    
+    <!-- Load GLTFLoader - this attaches to THREE.GLTFLoader -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/loaders/GLTFLoader.js"
+            onerror="console.error('GLTFLoader script failed to load from jsdelivr')"></script>
+    <script>
+        // Verify GLTFLoader loaded correctly and attach to THREE namespace
+        (function() {
+            console.log('=== GLTFLoader Verification ===');
+            console.log('THREE.GLTFLoader:', typeof THREE !== 'undefined' ? typeof THREE.GLTFLoader : 'THREE not defined');
+            console.log('window.GLTFLoader:', typeof window.GLTFLoader);
+            
+            if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined') {
+                console.log('✅ GLTFLoader loaded successfully on THREE.GLTFLoader');
+                // Test instantiation
+                try {
+                    var testLoader = new THREE.GLTFLoader();
+                    console.log('✅ GLTFLoader instantiation test passed');
+                    window._gltfLoaderReady = true;
+                } catch (e) {
+                    console.error('❌ GLTFLoader instantiation failed:', e);
+                    window._gltfLoaderReady = false;
+                }
+            } else if (typeof window.GLTFLoader !== 'undefined') {
+                console.log('✅ GLTFLoader loaded on window.GLTFLoader (attaching to THREE)');
+                if (typeof THREE !== 'undefined') {
+                    THREE.GLTFLoader = window.GLTFLoader;
+                    console.log('Attached GLTFLoader to THREE namespace');
+                }
+                window._gltfLoaderReady = true;
+            } else {
+                console.error('❌ GLTFLoader NOT loaded! Will try fallback...');
+                window._gltfLoaderReady = false;
+                
+                // Fallback: try loading from unpkg
+                var fallbackScript = document.createElement('script');
+                fallbackScript.src = 'https://unpkg.com/three@0.149.0/examples/js/loaders/GLTFLoader.js';
+                fallbackScript.onload = function() {
+                    console.log('Fallback GLTFLoader script loaded');
+                    if (typeof THREE.GLTFLoader !== 'undefined') {
+                        console.log('✅ GLTFLoader now available via fallback');
+                        window._gltfLoaderReady = true;
+                    }
+                };
+                fallbackScript.onerror = function() {
+                    console.error('Fallback GLTFLoader also failed to load');
+                };
+                document.head.appendChild(fallbackScript);
+            }
+        })();
+    </script>
 
     <!-- Load Platform Detector first -->
     <script src="platform-detector.js"></script>

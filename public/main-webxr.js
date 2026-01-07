@@ -8,6 +8,128 @@ if (typeof window !== 'undefined') {
     window.WebXRAR = window.WebXRAR || {};
     window.WebXRAR._scriptLoaded = true;
     window.WebXRAR._scriptLoadTime = Date.now();
+    
+    // Debug: Log Three.js and GLTFLoader availability at script load time
+    console.log('=== main-webxr.js loaded ===');
+    console.log('THREE available:', typeof THREE !== 'undefined');
+    console.log('THREE.GLTFLoader available:', typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined');
+    console.log('window.GLTFLoader available:', typeof window.GLTFLoader !== 'undefined');
+    
+    if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader === 'undefined') {
+        console.warn('WARNING: THREE exists but THREE.GLTFLoader is not defined!');
+        console.warn('This means GLTFLoader.js script may not have loaded correctly.');
+        console.warn('Check that <script src="...GLTFLoader.js"> is in the HTML BEFORE main-webxr.js');
+    }
+}
+
+// ============================================================================
+// GLTF LOADER SETUP (following bouncing-band pattern)
+// ============================================================================
+// Create a single GLTFLoader instance that will be used throughout the app
+// This matches how bouncing-band handles GLB loading
+let gltfLoader = null;
+
+/**
+ * Initialize the GLTFLoader - should be called after THREE.js is loaded
+ * Following the bouncing-band pattern of having a single loader instance
+ */
+function initGLTFLoader() {
+    if (gltfLoader) {
+        console.log('GLTFLoader already initialized, reusing instance');
+        return gltfLoader; // Already initialized
+    }
+    
+    console.log('=== Initializing GLTFLoader ===');
+    console.log('window._gltfLoaderReady flag:', window._gltfLoaderReady);
+    console.log('Checking THREE:', typeof THREE);
+    console.log('Checking THREE.GLTFLoader:', window.THREE?.GLTFLoader ? 'exists' : 'undefined');
+    console.log('Checking window.GLTFLoader:', window.GLTFLoader ? 'exists' : 'undefined');
+    
+    // Check if GLTFLoader is available on THREE namespace (classic script loading)
+    if (window.THREE && window.THREE.GLTFLoader) {
+        try {
+            gltfLoader = new window.THREE.GLTFLoader();
+            console.log('✅ GLTFLoader initialized from THREE.GLTFLoader');
+            return gltfLoader;
+        } catch (e) {
+            console.error('Failed to instantiate THREE.GLTFLoader:', e);
+        }
+    }
+    
+    // Check if GLTFLoader is available as standalone global
+    if (window.GLTFLoader) {
+        try {
+            gltfLoader = new window.GLTFLoader();
+            console.log('✅ GLTFLoader initialized from window.GLTFLoader');
+            // Also attach to THREE for consistency
+            if (window.THREE && !window.THREE.GLTFLoader) {
+                window.THREE.GLTFLoader = window.GLTFLoader;
+            }
+            return gltfLoader;
+        } catch (e) {
+            console.error('Failed to instantiate window.GLTFLoader:', e);
+        }
+    }
+    
+    // Log all THREE properties to help debug
+    if (window.THREE) {
+        const loaderKeys = Object.keys(window.THREE).filter(k => k.toLowerCase().includes('loader'));
+        console.log('Available loaders on THREE:', loaderKeys.length > 0 ? loaderKeys : 'none');
+    }
+    
+    // Final attempt: wait a bit and try again (in case script is still loading)
+    console.warn('GLTFLoader not found immediately. The page might still be loading scripts...');
+    console.error('❌ GLTFLoader not available! Check that GLTFLoader.js script is loaded correctly.');
+    if (window.Toast) {
+        window.Toast.error('GLTFLoader not found. 3D models cannot be loaded. Try refreshing the page.', 'Loader Error', 8000);
+    }
+    return null;
+}
+
+/**
+ * Load a GLB/GLTF model using the bouncing-band Promise pattern
+ * @param {string} url - Path to the GLB file
+ * @returns {Promise<THREE.Group>} - The loaded model's scene
+ */
+function loadModel(url) {
+    return new Promise((resolve, reject) => {
+        if (!gltfLoader) {
+            gltfLoader = initGLTFLoader();
+        }
+        
+        if (!gltfLoader) {
+            reject(new Error('GLTFLoader not available'));
+            return;
+        }
+        
+        gltfLoader.load(
+            url,
+            (gltf) => {
+                console.log('Model loaded successfully:', url);
+                resolve(gltf);
+            },
+            (progress) => {
+                if (progress.total > 0) {
+                    const percent = Math.round((progress.loaded / progress.total) * 100);
+                    console.log(`Loading ${url}: ${percent}%`);
+                }
+            },
+            (error) => {
+                console.error('Failed to load model:', url, error);
+                reject(error);
+            }
+        );
+    });
+}
+
+/**
+ * Load a mesh from a GLB file (returns first child like bouncing-band)
+ * @param {string} url - Path to the GLB file
+ * @returns {Promise<THREE.Object3D>} - The first child of the loaded scene
+ */
+async function loadMesh(url) {
+    const gltf = await loadModel(url);
+    return gltf.scene.children[0];
 }
 
 // ============================================================================
@@ -497,178 +619,39 @@ async function createContentForSurface(surfaceType) {
     placedSurfaceType = surfaceType;
     
     if (surfaceType === 'wall') {
-        // Load wire.glb for walls
+        // Load wire.glb for walls - using bouncing-band pattern
         console.log('Loading wire.glb for wall surface...');
         
         if (window.Toast) {
             window.Toast.info('Loading wire model...', 'Loading', 2000);
         }
         
-        /**
-         * Try to resolve a GLTFLoader constructor from any of the global locations
-         * that Three's example loader might attach to.
-         *
-         * This mirrors how projects like Bouncing Band wire things up: they
-         * just import/use a GLTFLoader class, without caring whether it lives
-         * on `THREE` or as a standalone global.
-         */
-        function getGlobalGLTFLoader() {
-            // Preferred: attached to THREE namespace
-            if (window.THREE && window.THREE.GLTFLoader) {
-                return window.THREE.GLTFLoader;
-            }
-            // Fallback: standalone global (e.g. if script only defines `GLTFLoader`)
-            if (window.GLTFLoader) {
-                return window.GLTFLoader;
-            }
-            return null;
-        }
-
-        /**
-         * Ensure GLTFLoader is available.
-         * 1) Prefer an already-loaded global GLTFLoader (THREE.GLTFLoader or GLTFLoader)
-         * 2) If missing, dynamically load GLTFLoader from a secondary CDN
-         */
-        async function ensureGLTFLoader() {
-            // Case 1: already present (either on THREE or as a standalone global)
-            const existingLoader = getGlobalGLTFLoader();
-            if (existingLoader) {
-                console.log('GLTFLoader found globally (THREE.GLTFLoader or GLTFLoader)');
-                return existingLoader;
-            }
-            
-            console.warn('GLTFLoader not found globally, loading dynamically from CDN fallback...');
-            
-            // Case 2: dynamically inject script from alternate CDN
-            const existingScript = document.querySelector('script[data-dynamic-gltfloader="true"]');
-            if (existingScript) {
-                // If a dynamic script already exists, wait for it to finish
-                console.log('Dynamic GLTFLoader script tag already present, waiting for it to load...');
-                await new Promise((resolve) => {
-                    if (getGlobalGLTFLoader()) {
-                        resolve();
-                        return;
-                    }
-                    const checkInterval = setInterval(() => {
-                        if (getGlobalGLTFLoader()) {
-                            clearInterval(checkInterval);
-                            resolve();
-                        }
-                    }, 100);
-                    // Give up after 5 seconds
-                    setTimeout(() => {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }, 5000);
-                });
-                return getGlobalGLTFLoader();
-            }
-            
-            const script = document.createElement('script');
-            script.src = 'https://unpkg.com/three@0.149.0/examples/js/loaders/GLTFLoader.js';
-            script.async = true;
-            script.setAttribute('data-dynamic-gltfloader', 'true');
-            
-            const loadPromise = new Promise((resolve, reject) => {
-                script.onload = () => {
-                    console.log('Dynamic GLTFLoader script loaded from unpkg');
-                    const ctor = getGlobalGLTFLoader();
-                    if (ctor) {
-                        resolve(ctor);
-                    } else {
-                        reject(new Error('GLTFLoader script loaded but no global GLTFLoader constructor was found.'));
-                    }
-                };
-                script.onerror = (err) => {
-                    console.error('Dynamic GLTFLoader script failed to load:', err);
-                    reject(new Error('Failed to load GLTFLoader from CDN fallback.'));
-                };
-            });
-            
-            document.head.appendChild(script);
-            
-            try {
-                return await loadPromise;
-            } catch (e) {
-                console.error('ensureGLTFLoader failed:', e);
-                return null;
-            }
-        }
-        
-        const GLTFLoaderCtor = await ensureGLTFLoader();
-        
-        if (!GLTFLoaderCtor) {
-            console.error('GLTFLoader still not available after dynamic load. Falling back to orange box for wall.');
-            if (window.Toast) {
-                window.Toast.warning('Model loader not available (even after dynamic load), using placeholder', 'Warning', 4000);
-            }
-            createWallPlaceholder();
-            return;
-        }
-        
-        const loader = new GLTFLoaderCtor();
         try {
-            console.log('=== WIRE.GLB LOADING START ===');
-            console.log('GLTFLoader available:', !!GLTFLoader);
-            console.log('Loading path: ./assets/wire.glb');
-            
-            // Force show toast to verify toast system works
-            if (window.Toast) {
-                window.Toast.info('Starting to load wire.glb...', 'Loading Model', 3000);
-            } else {
-                console.error('WARNING: window.Toast is not available!');
+            // Initialize the loader if not already done
+            if (!gltfLoader) {
+                gltfLoader = initGLTFLoader();
             }
             
-            const gltf = await new Promise((resolve, reject) => {
-                const startTime = Date.now();
-                loader.load(
-                    './assets/wire.glb',
-                    (gltf) => {
-                        const loadTime = Date.now() - startTime;
-                        console.log('=== WIRE.GLB LOADED SUCCESSFULLY ===');
-                        console.log('Load time:', loadTime + 'ms');
-                        console.log('GLTF object:', gltf);
-                        console.log('GLTF scene:', gltf.scene);
-                        console.log('Scene children count:', gltf.scene ? gltf.scene.children.length : 0);
-                        
-                        if (window.Toast) {
-                            window.Toast.success('wire.glb loaded!', 'Success', 2000);
-                        }
-                        resolve(gltf);
-                    },
-                    (progress) => {
-                        if (progress.total > 0) {
-                            const percent = Math.round((progress.loaded / progress.total) * 100);
-                            console.log(`Loading wire.glb: ${percent}% (${progress.loaded}/${progress.total} bytes)`);
-                        } else {
-                            console.log(`Loading wire.glb: ${progress.loaded} bytes loaded`);
-                        }
-                    },
-                    (error) => {
-                        console.error('=== WIRE.GLB LOAD ERROR ===');
-                        console.error('Error type:', error.constructor.name);
-                        console.error('Error message:', error.message);
-                        console.error('Error stack:', error.stack);
-                        console.error('Full error object:', error);
-                        
-                        // Force show error toast
-                        if (window.Toast) {
-                            window.Toast.error(`Load failed: ${error.message || 'Unknown error'}`, 'Load Error', 6000);
-                        }
-                        reject(error);
-                    }
-                );
-            });
+            if (!gltfLoader) {
+                throw new Error('GLTFLoader not available - check that Three.js and GLTFLoader scripts are loaded');
+            }
             
-            console.log('=== PROCESSING LOADED MODEL ===');
+            console.log('=== WIRE.GLB LOADING START ===');
+            console.log('Using loadModel() function (bouncing-band pattern)');
+            
+            // Use the loadModel function (bouncing-band pattern)
+            const gltf = await loadModel('./assets/wire.glb');
+            
+            console.log('=== WIRE.GLB LOADED SUCCESSFULLY ===');
+            console.log('GLTF object:', gltf);
+            console.log('Scene children count:', gltf.scene ? gltf.scene.children.length : 0);
+            
+            // Following bouncing-band: use the scene directly or first child
             wireModel = gltf.scene;
             
             if (!wireModel) {
                 throw new Error('gltf.scene is null or undefined');
             }
-            
-            console.log('Wire model scene:', wireModel);
-            console.log('Wire model children:', wireModel.children.length);
             
             // Calculate bounding box to understand model size
             const box = new THREE.Box3().setFromObject(wireModel);
@@ -680,8 +663,7 @@ async function createContentForSurface(surfaceType) {
             // Reset position and scale
             wireModel.position.set(0, 0, 0);
             
-            // Auto-scale model if it's too large or too small
-            // Most AR models should be around 0.1-1 meter in size
+            // Auto-scale model - similar to bouncing-band's approach
             const maxDimension = Math.max(size.x, size.y, size.z);
             if (maxDimension > 0) {
                 const targetSize = 0.3; // Target 30cm for largest dimension
@@ -690,7 +672,6 @@ async function createContentForSurface(surfaceType) {
                 console.log(`Auto-scaled model by factor: ${scaleFactor.toFixed(2)}`);
             } else {
                 wireModel.scale.set(1, 1, 1);
-                console.log('Using default scale (1, 1, 1)');
             }
             
             // Center the model
@@ -701,34 +682,21 @@ async function createContentForSurface(surfaceType) {
             wireModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
-                    console.log('Mesh made visible:', child.name || 'unnamed');
                 }
             });
             
             contentGroup.add(wireModel);
             console.log('=== WIRE.GLB ADDED TO SCENE ===');
-            console.log('Content group children:', contentGroup.children.length);
-            console.log('Content group visible:', contentGroup.visible);
             
             if (window.Toast) {
                 window.Toast.success('Wire model placed!', 'Success', 3000);
             }
         } catch (error) {
-            console.error('=== FAILED TO LOAD WIRE.GLB (CATCH BLOCK) ===');
-            console.error('Error type:', error?.constructor?.name || typeof error);
-            console.error('Error message:', error?.message || String(error));
-            console.error('Error stack:', error?.stack || 'No stack trace');
-            console.error('Full error:', error);
-            
-            // Force show error toast with multiple methods
-            const errorMsg = error?.message || String(error) || 'Unknown error';
-            console.error('Showing error toast with message:', errorMsg);
+            console.error('=== FAILED TO LOAD WIRE.GLB ===');
+            console.error('Error:', error?.message || String(error));
             
             if (window.Toast) {
-                window.Toast.error(`Failed to load wire model: ${errorMsg}`, 'Load Error', 8000);
-            } else {
-                console.error('CRITICAL: Toast system not available!');
-                alert(`Failed to load wire.glb: ${errorMsg}`);
+                window.Toast.error(`Failed to load wire model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000);
             }
             
             console.log('Falling back to orange box for wall');
