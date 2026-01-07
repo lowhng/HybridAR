@@ -438,6 +438,8 @@ async function initWebXR() {
  * @param {string} surfaceType - 'wall' or 'floor'
  */
 async function createContentForSurface(surfaceType) {
+    console.log(`Creating content for surface type: ${surfaceType}`);
+    
     // Clear existing content
     while (contentGroup.children.length > 0) {
         const child = contentGroup.children[0];
@@ -450,6 +452,18 @@ async function createContentForSurface(surfaceType) {
                 child.material.dispose();
             }
         }
+        if (child.traverse) {
+            child.traverse((obj) => {
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                        obj.material.forEach(mat => mat.dispose());
+                    } else {
+                        obj.material.dispose();
+                    }
+                }
+            });
+        }
         if (child.dispose) child.dispose();
     }
     
@@ -459,33 +473,58 @@ async function createContentForSurface(surfaceType) {
     
     if (surfaceType === 'wall') {
         // Load wire.glb for walls
+        console.log('Loading wire.glb for wall surface...');
+        
+        if (window.Toast) {
+            window.Toast.info('Loading wire model...', 'Loading', 2000);
+        }
+        
         // Check if GLTFLoader is available (might be loaded asynchronously)
         // Wait a bit for GLTFLoader to load if it's not immediately available
         let GLTFLoader = THREE?.GLTFLoader || window.THREE?.GLTFLoader;
         
         if (!GLTFLoader) {
+            console.log('GLTFLoader not immediately available, waiting...');
             // Wait up to 2 seconds for GLTFLoader to load
             for (let i = 0; i < 20; i++) {
                 await new Promise(resolve => setTimeout(resolve, 100));
                 GLTFLoader = THREE?.GLTFLoader || window.THREE?.GLTFLoader;
-                if (GLTFLoader) break;
+                if (GLTFLoader) {
+                    console.log('GLTFLoader became available');
+                    break;
+                }
             }
         }
         
         if (!GLTFLoader) {
-            console.error('GLTFLoader not available after waiting. Falling back to green box.');
-            createGreenBox();
+            console.error('GLTFLoader not available after waiting. Falling back to orange box for wall.');
+            if (window.Toast) {
+                window.Toast.warning('Model loader not available, using placeholder', 'Warning', 3000);
+            }
+            createWallPlaceholder();
             return;
         }
         
         const loader = new GLTFLoader();
         try {
+            console.log('Starting to load wire.glb...');
             const gltf = await new Promise((resolve, reject) => {
                 loader.load(
                     './assets/wire.glb',
-                    (gltf) => resolve(gltf),
-                    undefined,
-                    (error) => reject(error)
+                    (gltf) => {
+                        console.log('wire.glb loaded successfully');
+                        resolve(gltf);
+                    },
+                    (progress) => {
+                        if (progress.total > 0) {
+                            const percent = Math.round((progress.loaded / progress.total) * 100);
+                            console.log(`Loading wire.glb: ${percent}%`);
+                        }
+                    },
+                    (error) => {
+                        console.error('wire.glb load error:', error);
+                        reject(error);
+                    }
                 );
             });
             
@@ -494,16 +533,50 @@ async function createContentForSurface(surfaceType) {
             // Scale if needed - adjust based on your model size
             wireModel.scale.set(1, 1, 1);
             contentGroup.add(wireModel);
-            console.log('Wire.glb loaded for wall');
+            console.log('Wire.glb added to scene for wall');
+            
+            if (window.Toast) {
+                window.Toast.success('Wire model placed!', 'Success', 2000);
+            }
         } catch (error) {
             console.error('Failed to load wire.glb:', error);
-            console.log('Falling back to green box');
-            createGreenBox();
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack
+            });
+            
+            if (window.Toast) {
+                window.Toast.error(`Failed to load wire model: ${error.message}`, 'Load Error', 4000);
+            }
+            
+            console.log('Falling back to orange box for wall');
+            createWallPlaceholder();
         }
     } else {
         // Create green box for floors
+        console.log('Creating green box for floor surface');
         createGreenBox();
+        
+        if (window.Toast) {
+            window.Toast.success('Floor cube placed!', 'Success', 2000);
+        }
     }
+}
+
+/**
+ * Creates an orange box as placeholder for walls (when wire.glb fails to load)
+ */
+function createWallPlaceholder() {
+    const geometry = new THREE.BoxGeometry(0.15, 0.15, 0.02); // Flatter box for wall
+    const material = new THREE.MeshStandardMaterial({ 
+        color: 0xff6b35, // Orange color for wall
+        metalness: 0.3,
+        roughness: 0.6
+    });
+    cubeMesh = new THREE.Mesh(geometry, material);
+    cubeMesh.position.set(0, 0, 0);
+    contentGroup.add(cubeMesh);
+    console.log('Orange wall placeholder created');
 }
 
 /**
@@ -526,6 +599,31 @@ function createGreenBox() {
 // TAP TO PLACE
 // ============================================================================
 
+/**
+ * Infers surface type based on camera gaze direction
+ * Looking mostly horizontal = wall, looking down = floor
+ * @returns {string} 'wall' or 'floor'
+ */
+function inferSurfaceTypeFromGaze(direction) {
+    // direction.y indicates vertical component:
+    // - Near 0 = looking horizontally (wall)
+    // - Negative = looking down (floor)
+    // - Positive = looking up (ceiling)
+    const lookingDownThreshold = -0.3; // Looking down more than ~17 degrees
+    const lookingHorizontalThreshold = 0.3; // Looking within ~17 degrees of horizontal
+    
+    if (direction.y > lookingDownThreshold && direction.y < lookingHorizontalThreshold) {
+        // Looking mostly horizontal - likely aiming at a wall
+        return 'wall';
+    } else if (direction.y <= lookingDownThreshold) {
+        // Looking down - likely aiming at floor
+        return 'floor';
+    } else {
+        // Looking up - default to wall (ceiling could work too)
+        return 'wall';
+    }
+}
+
 function setupTapToPlace() {
     if (!xrSession) return;
     
@@ -535,48 +633,57 @@ function setupTapToPlace() {
         // detected surface type. This allows:
         // - First tap on a wall → spawn wire.glb
         // - Second tap on the floor → replace with green cube
-        if (reticle.visible) {
-            const surfaceType = currentSurfaceType || 'floor'; // Default to floor if not detected
-            
-            // Create appropriate content based on surface type
-            await createContentForSurface(surfaceType);
+        if (reticle.visible && currentSurfaceType) {
+            // Create appropriate content based on detected surface type
+            await createContentForSurface(currentSurfaceType);
             
             contentGroup.position.setFromMatrixPosition(reticle.matrix);
             contentGroup.visible = true;
             isAnchored = true;
-            console.log(`Content placed or updated at detected surface (${surfaceType})`);
+            console.log(`Content placed at detected surface (${currentSurfaceType})`);
             return;
         }
         
-        // Fallback: if we don't have hit-test, place 1 meter in front of camera
-        if (!xrHitTestSource) {
-            const frame = renderer.xr.getFrame();
-            if (frame) {
-                const pose = frame.getViewerPose(xrReferenceSpace);
-                if (pose) {
-                    const view = pose.views[0];
-                    if (view) {
-                        // Get camera position and direction
-                        const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
-                        const position = new THREE.Vector3();
-                        const direction = new THREE.Vector3(0, 0, -1);
-                        
-                        position.setFromMatrixPosition(matrix);
-                        direction.applyMatrix4(matrix);
-                        direction.sub(position).normalize();
-                        
-                        // Default to floor when no hit-test
-                        await createContentForSurface('floor');
-                        
-                        // Place 1 meter in front of camera, at same height
-                        contentGroup.position.copy(position);
-                        contentGroup.position.addScaledVector(direction, 1.0);
-                        contentGroup.position.y -= 0.3; // Lower slightly
-                        contentGroup.visible = true;
-                        isAnchored = true;
-                        console.log('Content placed in front of camera (floor default, no hit-test)');
-                    }
+        // Fallback: If hit-test didn't detect a surface (e.g., looking at a wall
+        // on devices that only support floor detection), place content in front
+        // of camera and infer surface type from gaze direction
+        const frame = renderer.xr.getFrame();
+        if (frame) {
+            const pose = frame.getViewerPose(xrReferenceSpace);
+            if (pose && pose.views && pose.views.length > 0) {
+                const view = pose.views[0];
+                // Get camera position and direction
+                const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
+                const position = new THREE.Vector3();
+                const direction = new THREE.Vector3(0, 0, -1);
+                
+                position.setFromMatrixPosition(matrix);
+                direction.applyMatrix4(matrix);
+                direction.sub(position).normalize();
+                
+                // Infer surface type from where the camera is pointing
+                const inferredSurfaceType = inferSurfaceTypeFromGaze(direction);
+                console.log(`No hit-test result - inferring surface type from gaze: ${inferredSurfaceType}`);
+                console.log(`Camera direction: (${direction.x.toFixed(2)}, ${direction.y.toFixed(2)}, ${direction.z.toFixed(2)})`);
+                
+                // Create content for inferred surface type
+                await createContentForSurface(inferredSurfaceType);
+                
+                // Place at distance in front of camera
+                const placementDistance = 1.0; // 1 meter
+                contentGroup.position.copy(position);
+                contentGroup.position.addScaledVector(direction, placementDistance);
+                
+                // Adjust vertical position based on surface type
+                if (inferredSurfaceType === 'floor') {
+                    // Lower content to approximate floor level
+                    contentGroup.position.y = position.y - 1.0; // Assume ~1m below camera is floor
                 }
+                // For walls, keep at the aimed position
+                
+                contentGroup.visible = true;
+                isAnchored = true;
+                console.log(`Content placed in front of camera as ${inferredSurfaceType}`);
             }
         }
     });
@@ -643,8 +750,6 @@ function detectSurfaceType(hitPose) {
     if (yComponent < 0.7 && zVertical < 0.7) {
         return 'wall';
     }
-    
-    return surfaceType;
     
     return surfaceType;
 }
@@ -748,9 +853,10 @@ function onXRFrame(timestamp, frame) {
             reticle.visible = false;
             currentSurfaceType = null;
         }
-    } else if (!xrHitTestSource && !isAnchored) {
-        // No hit-test available - show reticle in center as tap indicator
-        // Position it 1m in front of camera
+    } else if (!isAnchored) {
+        // Hit-test available but no surface detected (e.g., looking at wall on device
+        // that only supports floor detection), OR no hit-test available at all.
+        // Show a "tap anyway" reticle in front of camera
         const pose = frame.getViewerPose(xrReferenceSpace);
         if (pose && pose.views && pose.views.length > 0) {
             const view = pose.views[0];
@@ -769,8 +875,13 @@ function onXRFrame(timestamp, frame) {
             reticle.visible = true;
             reticle.matrixAutoUpdate = true;
             
-            // Default to floor appearance when no hit-test
-            updateReticleAppearance('floor');
+            // Infer surface type from gaze direction for reticle appearance
+            const inferredType = inferSurfaceTypeFromGaze(direction);
+            updateReticleAppearance(inferredType);
+            
+            // Update currentSurfaceType so tap handler knows what we're aiming at
+            // But set it to null so tap handler uses inference instead of hit-test
+            currentSurfaceType = null;
         }
     }
 
