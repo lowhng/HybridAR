@@ -33,7 +33,11 @@ async function initializeAR() {
         const msg = 'WebXR immersive-ar is not supported on this device or browser.\n\n' +
             'Please open this experience in a WebXR-capable browser. On iOS, use the Variant Launch viewer; ' +
             'on Android, use Chrome.';
-        alert(msg);
+        if (window.Toast) {
+            window.Toast.error(msg, 'WebXR Not Supported', 10000);
+        } else {
+            alert(msg);
+        }
 
         if (startButton) {
             startButton.disabled = false;
@@ -73,7 +77,12 @@ async function initializeAR() {
         
         // Show error message
         const errorMessage = error.message || 'Unknown error occurred';
-        alert(`Failed to start AR:\n\n${errorMessage}\n\nPlease check:\n- Camera permissions are granted\n- Required files exist\n- Camera is not being used by another app\n- You're using a modern browser`);
+        const fullMessage = `${errorMessage}\n\nPlease check:\n- Camera permissions are granted\n- Required files exist\n- Camera is not being used by another app\n- You're using a modern browser`;
+        if (window.Toast) {
+            window.Toast.error(fullMessage, 'AR Initialization Failed', 10000);
+        } else {
+            alert(`Failed to start AR:\n\n${fullMessage}`);
+        }
         
         // Re-enable start button
         if (startButton) {
@@ -319,14 +328,38 @@ function resetAR() {
 if (startButton) {
     startButton.addEventListener('click', async () => {
         try {
+            console.log('Start AR button clicked');
             startButton.disabled = true;
             startButton.textContent = 'Starting...';
+            
+            // Add a small delay to ensure button state is updated
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
             await initializeAR();
+            console.log('AR initialization completed successfully');
         } catch (error) {
             console.error('Failed to initialize AR:', error);
+            console.error('Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+            
+            // Show user-friendly error in toast
+            if (window.Toast) {
+                window.Toast.error(
+                    `${error.message}\n\n${error.stack ? error.stack.substring(0, 200) : ''}`,
+                    'Failed to Start AR',
+                    10000
+                );
+            } else {
+                alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
+            }
+            
             if (startButton) {
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';
+                startButton.classList.remove('hidden');
             }
         }
     });

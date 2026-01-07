@@ -59,15 +59,28 @@ async function initWebXR() {
     
     // Check WebXR support
     if (!navigator.xr) {
-        throw new Error('WebXR is not supported on this device. Please use an Android device with Chrome.');
+        const error = 'WebXR is not supported on this device. Please use an Android device with Chrome or iOS with Variant Launch.';
+        console.error(error);
+        if (window.Toast) {
+            window.Toast.error(error, 'WebXR Not Available', 8000);
+        }
+        throw new Error(error);
     }
 
     const isSupported = await navigator.xr.isSessionSupported('immersive-ar');
     if (!isSupported) {
-        throw new Error('WebXR immersive-ar is not supported on this device.');
+        const error = 'WebXR immersive-ar is not supported on this device.';
+        console.error(error);
+        if (window.Toast) {
+            window.Toast.error(error, 'WebXR Session Not Supported', 8000);
+        }
+        throw new Error(error);
     }
 
     console.log('WebXR supported, initializing...');
+    if (window.Toast) {
+        window.Toast.info('WebXR is supported, starting initialization...', 'Initializing', 3000);
+    }
 
     // Create Three.js scene
     scene = new THREE.Scene();
@@ -88,10 +101,22 @@ async function initWebXR() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     
+    // CRITICAL for iOS: Ensure XR is properly configured
+    // Some iOS WebXR viewers need explicit configuration
+    if (renderer.xr) {
+        renderer.xr.enabled = true;
+        // Don't set autoUpdate to false - iOS needs automatic updates
+        console.log('WebXR renderer configured');
+    }
+    
     // Set clear color with 0 alpha for transparency
+    // This is essential for camera passthrough to show through
     renderer.setClearColor(0x000000, 0);
     
-    // Style the canvas
+    // Ensure output encoding is correct for AR
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    
+    // Style the canvas - CRITICAL for iOS: must be visible and properly sized
     const canvas = renderer.domElement;
     canvas.style.display = 'block';
     canvas.style.width = '100%';
@@ -99,7 +124,25 @@ async function initWebXR() {
     canvas.style.position = 'absolute';
     canvas.style.top = '0';
     canvas.style.left = '0';
+    canvas.style.zIndex = '1';
+    // Ensure canvas is visible (not hidden)
+    canvas.style.visibility = 'visible';
+    canvas.style.opacity = '1';
+    
+    // Append canvas to container
     arContainer.appendChild(canvas);
+    
+    // Force a reflow to ensure canvas is in DOM and visible before session starts
+    // This is especially important for iOS
+    canvas.offsetHeight; // Trigger reflow
+    
+    console.log('Canvas created and appended:', {
+        width: canvas.width,
+        height: canvas.height,
+        display: canvas.style.display,
+        visibility: canvas.style.visibility,
+        inDOM: document.body.contains(canvas)
+    });
 
     // Create content group for AR objects
     contentGroup = new THREE.Group();
@@ -183,6 +226,11 @@ async function initWebXR() {
     // Start WebXR session
     try {
         console.log('Requesting WebXR session...');
+        console.log('Canvas ready:', {
+            width: renderer.domElement.width,
+            height: renderer.domElement.height,
+            visible: renderer.domElement.style.visibility !== 'hidden'
+        });
         
         // Request session - don't require any specific reference space
         // We'll request the reference space after session starts.
@@ -195,10 +243,28 @@ async function initWebXR() {
 
         console.log('WebXR session started successfully');
         console.log('Session features:', xrSession.enabledFeatures);
+        console.log('Session object:', xrSession);
+        
+        if (window.Toast) {
+            window.Toast.success('WebXR session started!', 'Session Active', 3000);
+        }
+        
+        // CRITICAL for iOS: Ensure canvas is still visible before connecting renderer
+        const canvas = renderer.domElement;
+        if (canvas.style.visibility === 'hidden' || canvas.style.display === 'none') {
+            console.warn('Canvas was hidden, making it visible again');
+            canvas.style.visibility = 'visible';
+            canvas.style.display = 'block';
+        }
         
         // Connect renderer to XR session
         await renderer.xr.setSession(xrSession);
         console.log('Renderer connected to XR session');
+        
+        // Force an immediate render to ensure camera feed appears
+        // This is especially important for iOS
+        renderer.render(scene, camera);
+        console.log('Initial render completed');
         
         // Try different reference space types in order of preference
         const referenceSpaceTypes = ['local-floor', 'local', 'viewer'];
@@ -256,8 +322,30 @@ async function initWebXR() {
         });
 
         // Set up render loop - Three.js handles XR rendering automatically
+        // CRITICAL: The render loop must be set for the camera feed to appear
         renderer.setAnimationLoop(onXRFrame);
         console.log('Render loop started - camera feed should be visible');
+        
+        if (window.Toast) {
+            window.Toast.info('Render loop started. Camera feed should appear shortly...', 'Rendering', 4000);
+        }
+        
+        // Force an immediate frame render to kickstart the loop (iOS sometimes needs this)
+        requestAnimationFrame(() => {
+            console.log('Animation frame requested - render loop should be active');
+            // Double-check that the loop is actually running
+            if (renderer.xr.isPresenting) {
+                console.log('XR is presenting - camera feed should be visible');
+                if (window.Toast) {
+                    window.Toast.success('XR is presenting! Camera feed should be visible.', 'AR Active', 3000);
+                }
+            } else {
+                console.warn('XR is not presenting yet - this might be normal during initialization');
+                if (window.Toast) {
+                    window.Toast.warning('XR not presenting yet. This may be normal during initialization.', 'Initializing', 4000);
+                }
+            }
+        });
 
         // Handle window resize
         window.addEventListener('resize', onWindowResize);
@@ -267,6 +355,14 @@ async function initWebXR() {
 
     } catch (error) {
         console.error('Failed to start WebXR session:', error);
+        // Show error in toast if available
+        if (window.Toast) {
+            window.Toast.error(
+                `WebXR Session Error: ${error.message}\n\n${error.stack ? error.stack.substring(0, 300) : ''}`,
+                'WebXR Initialization Failed',
+                10000
+            );
+        }
         throw error;
     }
 }
@@ -423,15 +519,29 @@ let frameCount = 0;
 function onXRFrame(timestamp, frame) {
     frameCount++;
     
-    // Log periodically to confirm render loop is running
-    if (frameCount % 300 === 0) {
-        console.log('WebXR render loop active - frame:', frameCount);
+    // Log first few frames to confirm render loop is running (especially important for iOS debugging)
+    if (frameCount === 1) {
+        console.log('WebXR render loop started - first frame rendered');
+        if (window.Toast) {
+            window.Toast.success('First frame rendered!', 'Render Loop Active', 2000);
+        }
+    } else if (frameCount <= 5 || frameCount % 300 === 0) {
+        console.log('WebXR render loop active - frame:', frameCount, 'hasFrame:', !!frame);
     }
     
     // CRITICAL: Always render even if we don't have a pose
     // This keeps the XR session alive and shows the camera feed
+    // On iOS, the camera feed might not appear if we don't render every frame
     
     if (!frame) {
+        // Still render even without frame to keep session alive
+        renderer.render(scene, camera);
+        return;
+    }
+    
+    // Ensure we have a valid session
+    if (!xrSession) {
+        console.warn('No XR session in render loop');
         renderer.render(scene, camera);
         return;
     }
