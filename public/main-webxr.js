@@ -185,10 +185,12 @@ async function initWebXR() {
         console.log('Requesting WebXR session...');
         
         // Request session - don't require any specific reference space
-        // We'll request the reference space after session starts
+        // We'll request the reference space after session starts.
+        // NOTE: We intentionally avoid requesting DOM overlay here because
+        // some iOS WebXR viewers (including Variant Launch) can show a black
+        // screen if dom-overlay is requested but not fully supported.
         xrSession = await navigator.xr.requestSession('immersive-ar', {
-            optionalFeatures: ['local', 'local-floor', 'hit-test', 'dom-overlay'],
-            domOverlay: { root: document.body }
+            optionalFeatures: ['local', 'local-floor', 'hit-test']
         });
 
         console.log('WebXR session started successfully');
