@@ -529,49 +529,52 @@ function createGreenBox() {
 function setupTapToPlace() {
     if (!xrSession) return;
     
-    xrSession.addEventListener('select', async (event) => {
-        if (!isAnchored) {
-            if (reticle.visible) {
-                // Place content at reticle position (hit-test available)
-                const surfaceType = currentSurfaceType || 'floor'; // Default to floor if not detected
-                
-                // Create appropriate content based on surface type
-                await createContentForSurface(surfaceType);
-                
-                contentGroup.position.setFromMatrixPosition(reticle.matrix);
-                contentGroup.visible = true;
-                isAnchored = true;
-                reticle.visible = false;
-                console.log(`Content placed at detected surface (${surfaceType})`);
-            } else if (!xrHitTestSource) {
-                // Fallback: place content 1 meter in front of camera
-                // This is used when hit-test is not available
-                const frame = renderer.xr.getFrame();
-                if (frame) {
-                    const pose = frame.getViewerPose(xrReferenceSpace);
-                    if (pose) {
-                        const view = pose.views[0];
-                        if (view) {
-                            // Get camera position and direction
-                            const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
-                            const position = new THREE.Vector3();
-                            const direction = new THREE.Vector3(0, 0, -1);
-                            
-                            position.setFromMatrixPosition(matrix);
-                            direction.applyMatrix4(matrix);
-                            direction.sub(position).normalize();
-                            
-                            // Default to floor when no hit-test
-                            await createContentForSurface('floor');
-                            
-                            // Place 1 meter in front of camera, at same height
-                            contentGroup.position.copy(position);
-                            contentGroup.position.addScaledVector(direction, 1.0);
-                            contentGroup.position.y -= 0.3; // Lower slightly
-                            contentGroup.visible = true;
-                            isAnchored = true;
-                            console.log('Content placed in front of camera (floor default)');
-                        }
+    xrSession.addEventListener('select', async () => {
+        // If we have a visible reticle (hit-test result), always (re)place the
+        // content at that location and choose the asset based on the currently
+        // detected surface type. This allows:
+        // - First tap on a wall → spawn wire.glb
+        // - Second tap on the floor → replace with green cube
+        if (reticle.visible) {
+            const surfaceType = currentSurfaceType || 'floor'; // Default to floor if not detected
+            
+            // Create appropriate content based on surface type
+            await createContentForSurface(surfaceType);
+            
+            contentGroup.position.setFromMatrixPosition(reticle.matrix);
+            contentGroup.visible = true;
+            isAnchored = true;
+            console.log(`Content placed or updated at detected surface (${surfaceType})`);
+            return;
+        }
+        
+        // Fallback: if we don't have hit-test, place 1 meter in front of camera
+        if (!xrHitTestSource) {
+            const frame = renderer.xr.getFrame();
+            if (frame) {
+                const pose = frame.getViewerPose(xrReferenceSpace);
+                if (pose) {
+                    const view = pose.views[0];
+                    if (view) {
+                        // Get camera position and direction
+                        const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
+                        const position = new THREE.Vector3();
+                        const direction = new THREE.Vector3(0, 0, -1);
+                        
+                        position.setFromMatrixPosition(matrix);
+                        direction.applyMatrix4(matrix);
+                        direction.sub(position).normalize();
+                        
+                        // Default to floor when no hit-test
+                        await createContentForSurface('floor');
+                        
+                        // Place 1 meter in front of camera, at same height
+                        contentGroup.position.copy(position);
+                        contentGroup.position.addScaledVector(direction, 1.0);
+                        contentGroup.position.y -= 0.3; // Lower slightly
+                        contentGroup.visible = true;
+                        isAnchored = true;
+                        console.log('Content placed in front of camera (floor default, no hit-test)');
                     }
                 }
             }
@@ -709,8 +712,10 @@ function onXRFrame(timestamp, frame) {
         return;
     }
 
-    // Update reticle position from hit-test (only if not anchored and hit-test available)
-    if (xrHitTestSource && !isAnchored) {
+    // Update reticle position from hit-test whenever available
+    // (even after content has been placed) so the user can tap again
+    // to move/replace content on a new surface.
+    if (xrHitTestSource) {
         try {
             const hitTestResults = frame.getHitTestResults(xrHitTestSource);
             

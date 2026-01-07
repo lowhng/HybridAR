@@ -29,17 +29,13 @@
 
     <!-- Load Toast Notification System first (for error display) -->
     <script src="toast.js"></script>
-
-    <!-- Load Three.js as regular script (compatible) -->
+    
+    <!-- Load Three.js and GLTFLoader as classic scripts (no ES modules) to avoid
+         bare-module imports like "three" that some viewers (e.g. Variant Launch)
+         cannot resolve, which was causing the "Module name, 'three' does not resolve
+         to a valid URL" error. -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
-    <!-- Load GLTFLoader for loading .glb models -->
-    <script type="module">
-        // Load GLTFLoader as ES module and make it available globally
-        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/loaders/GLTFLoader.js';
-        window.THREE = window.THREE || {};
-        window.THREE.GLTFLoader = GLTFLoader;
-        console.log('GLTFLoader loaded and available');
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <!-- Load Platform Detector first -->
     <script src="platform-detector.js"></script>
