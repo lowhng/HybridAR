@@ -259,48 +259,73 @@ async function initWebXR() {
             throw new Error('navigator.xr.requestSession is not available. The WebXR API may not be fully initialized.');
         }
         
-        // Request session - don't require any specific reference space
+        // Request session - don't require any specific reference space.
         // We'll request the reference space after session starts.
-        // NOTE: We intentionally avoid requesting DOM overlay here because
-        // some iOS WebXR viewers (including Variant Launch) can show a black
-        // screen if dom-overlay is requested but not fully supported.
-        // 
-        // CRITICAL for Variant Launch SDK: Ensure session options are properly structured
-        // The SDK may try to access requiredFeatures, so we explicitly set it to an empty array
-        // to prevent "undefined is not an object" errors
-        const sessionOptions = {
+        //
+        // IMPORTANT (UI VISIBILITY):
+        // - On Android/Chrome we want DOM overlay so buttons + toasts stay visible.
+        // - On iOS/Variant Launch we avoid DOM overlay to prevent black-screen bugs.
+        //
+        // Base options used everywhere
+        const baseSessionOptions = {
             requiredFeatures: [], // Explicitly set to empty array to prevent SDK errors
             optionalFeatures: ['local', 'local-floor', 'hit-test']
         };
         
+        // Android/non‑iOS: try DOM overlay first so HTML UI (reset button, toasts)
+        // remains visible on top of the camera feed.
+        let sessionOptionsToUse = baseSessionOptions;
+        let triedDomOverlay = false;
+        
+        if (!platform.isIOS) {
+            triedDomOverlay = true;
+            sessionOptionsToUse = {
+                ...baseSessionOptions,
+                optionalFeatures: [...baseSessionOptions.optionalFeatures, 'dom-overlay'],
+                domOverlay: { root: document.body }
+            };
+        }
+        
         // Ensure the options object is properly structured and not null/undefined
-        // This prevents the SDK from receiving undefined when it expects an object
-        if (!sessionOptions || typeof sessionOptions !== 'object') {
+        if (!sessionOptionsToUse || typeof sessionOptionsToUse !== 'object') {
             throw new Error('Session options object is invalid');
         }
         
-        console.log('Requesting session with options:', sessionOptions);
+        console.log('Requesting session with options:', sessionOptionsToUse);
         
         // Wrap in try-catch to provide better error messages
         try {
-            xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptions);
+            xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptionsToUse);
         } catch (sessionError) {
-            // Provide more detailed error information
-            console.error('Session request failed:', sessionError);
-            console.error('Session error details:', {
-                name: sessionError.name,
-                message: sessionError.message,
-                stack: sessionError.stack
-            });
-            
-            if (sessionError.message && sessionError.message.includes('requiredFeatures')) {
-                throw new Error('WebXR session request failed due to feature configuration. This may be a Variant Launch SDK initialization issue. Please try refreshing the page.');
+            // If dom-overlay caused the failure, retry once without it
+            if (
+                triedDomOverlay &&
+                !platform.isIOS &&
+                (sessionError.name === 'NotSupportedError' ||
+                 (sessionError.message && sessionError.message.includes('dom-overlay')))
+            ) {
+                console.warn('DOM overlay not supported, retrying session without it...');
+                const fallbackOptions = baseSessionOptions;
+                console.log('Retrying session with options:', fallbackOptions);
+                xrSession = await navigator.xr.requestSession('immersive-ar', fallbackOptions);
+            } else {
+                // Provide more detailed error information
+                console.error('Session request failed:', sessionError);
+                console.error('Session error details:', {
+                    name: sessionError.name,
+                    message: sessionError.message,
+                    stack: sessionError.stack
+                });
+                
+                if (sessionError.message && sessionError.message.includes('requiredFeatures')) {
+                    throw new Error('WebXR session request failed due to feature configuration. This may be a Variant Launch SDK initialization issue. Please try refreshing the page.');
+                }
+                
+                // Re-throw with additional context
+                const enhancedError = new Error(`Failed to start WebXR session: ${sessionError.message || sessionError}`);
+                enhancedError.originalError = sessionError;
+                throw enhancedError;
             }
-            
-            // Re-throw with additional context
-            const enhancedError = new Error(`Failed to start WebXR session: ${sessionError.message || sessionError}`);
-            enhancedError.originalError = sessionError;
-            throw enhancedError;
         }
 
         console.log('WebXR session started successfully');
