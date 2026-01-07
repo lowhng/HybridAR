@@ -505,18 +505,39 @@ async function createContentForSurface(surfaceType) {
         }
         
         /**
+         * Try to resolve a GLTFLoader constructor from any of the global locations
+         * that Three's example loader might attach to.
+         *
+         * This mirrors how projects like Bouncing Band wire things up: they
+         * just import/use a GLTFLoader class, without caring whether it lives
+         * on `THREE` or as a standalone global.
+         */
+        function getGlobalGLTFLoader() {
+            // Preferred: attached to THREE namespace
+            if (window.THREE && window.THREE.GLTFLoader) {
+                return window.THREE.GLTFLoader;
+            }
+            // Fallback: standalone global (e.g. if script only defines `GLTFLoader`)
+            if (window.GLTFLoader) {
+                return window.GLTFLoader;
+            }
+            return null;
+        }
+
+        /**
          * Ensure GLTFLoader is available.
-         * 1) Prefer already-loaded THREE.GLTFLoader (from index.html script tag)
+         * 1) Prefer an already-loaded global GLTFLoader (THREE.GLTFLoader or GLTFLoader)
          * 2) If missing, dynamically load GLTFLoader from a secondary CDN
          */
         async function ensureGLTFLoader() {
-            // Case 1: already present
-            if (window.THREE && window.THREE.GLTFLoader) {
-                console.log('GLTFLoader found on window.THREE');
-                return window.THREE.GLTFLoader;
+            // Case 1: already present (either on THREE or as a standalone global)
+            const existingLoader = getGlobalGLTFLoader();
+            if (existingLoader) {
+                console.log('GLTFLoader found globally (THREE.GLTFLoader or GLTFLoader)');
+                return existingLoader;
             }
             
-            console.warn('GLTFLoader not found on window.THREE, loading dynamically from CDN fallback...');
+            console.warn('GLTFLoader not found globally, loading dynamically from CDN fallback...');
             
             // Case 2: dynamically inject script from alternate CDN
             const existingScript = document.querySelector('script[data-dynamic-gltfloader="true"]');
@@ -524,12 +545,12 @@ async function createContentForSurface(surfaceType) {
                 // If a dynamic script already exists, wait for it to finish
                 console.log('Dynamic GLTFLoader script tag already present, waiting for it to load...');
                 await new Promise((resolve) => {
-                    if (window.THREE && window.THREE.GLTFLoader) {
+                    if (getGlobalGLTFLoader()) {
                         resolve();
                         return;
                     }
                     const checkInterval = setInterval(() => {
-                        if (window.THREE && window.THREE.GLTFLoader) {
+                        if (getGlobalGLTFLoader()) {
                             clearInterval(checkInterval);
                             resolve();
                         }
@@ -540,7 +561,7 @@ async function createContentForSurface(surfaceType) {
                         resolve();
                     }, 5000);
                 });
-                return window.THREE && window.THREE.GLTFLoader ? window.THREE.GLTFLoader : null;
+                return getGlobalGLTFLoader();
             }
             
             const script = document.createElement('script');
@@ -551,10 +572,11 @@ async function createContentForSurface(surfaceType) {
             const loadPromise = new Promise((resolve, reject) => {
                 script.onload = () => {
                     console.log('Dynamic GLTFLoader script loaded from unpkg');
-                    if (window.THREE && window.THREE.GLTFLoader) {
-                        resolve(window.THREE.GLTFLoader);
+                    const ctor = getGlobalGLTFLoader();
+                    if (ctor) {
+                        resolve(ctor);
                     } else {
-                        reject(new Error('GLTFLoader script loaded but THREE.GLTFLoader is still undefined.'));
+                        reject(new Error('GLTFLoader script loaded but no global GLTFLoader constructor was found.'));
                     }
                 };
                 script.onerror = (err) => {
