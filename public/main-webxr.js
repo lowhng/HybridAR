@@ -507,46 +507,127 @@ async function createContentForSurface(surfaceType) {
         
         const loader = new GLTFLoader();
         try {
-            console.log('Starting to load wire.glb...');
+            console.log('=== WIRE.GLB LOADING START ===');
+            console.log('GLTFLoader available:', !!GLTFLoader);
+            console.log('Loading path: ./assets/wire.glb');
+            
+            // Force show toast to verify toast system works
+            if (window.Toast) {
+                window.Toast.info('Starting to load wire.glb...', 'Loading Model', 3000);
+            } else {
+                console.error('WARNING: window.Toast is not available!');
+            }
+            
             const gltf = await new Promise((resolve, reject) => {
+                const startTime = Date.now();
                 loader.load(
                     './assets/wire.glb',
                     (gltf) => {
-                        console.log('wire.glb loaded successfully');
+                        const loadTime = Date.now() - startTime;
+                        console.log('=== WIRE.GLB LOADED SUCCESSFULLY ===');
+                        console.log('Load time:', loadTime + 'ms');
+                        console.log('GLTF object:', gltf);
+                        console.log('GLTF scene:', gltf.scene);
+                        console.log('Scene children count:', gltf.scene ? gltf.scene.children.length : 0);
+                        
+                        if (window.Toast) {
+                            window.Toast.success('wire.glb loaded!', 'Success', 2000);
+                        }
                         resolve(gltf);
                     },
                     (progress) => {
                         if (progress.total > 0) {
                             const percent = Math.round((progress.loaded / progress.total) * 100);
-                            console.log(`Loading wire.glb: ${percent}%`);
+                            console.log(`Loading wire.glb: ${percent}% (${progress.loaded}/${progress.total} bytes)`);
+                        } else {
+                            console.log(`Loading wire.glb: ${progress.loaded} bytes loaded`);
                         }
                     },
                     (error) => {
-                        console.error('wire.glb load error:', error);
+                        console.error('=== WIRE.GLB LOAD ERROR ===');
+                        console.error('Error type:', error.constructor.name);
+                        console.error('Error message:', error.message);
+                        console.error('Error stack:', error.stack);
+                        console.error('Full error object:', error);
+                        
+                        // Force show error toast
+                        if (window.Toast) {
+                            window.Toast.error(`Load failed: ${error.message || 'Unknown error'}`, 'Load Error', 6000);
+                        }
                         reject(error);
                     }
                 );
             });
             
+            console.log('=== PROCESSING LOADED MODEL ===');
             wireModel = gltf.scene;
-            wireModel.position.set(0, 0, 0);
-            // Scale if needed - adjust based on your model size
-            wireModel.scale.set(1, 1, 1);
-            contentGroup.add(wireModel);
-            console.log('Wire.glb added to scene for wall');
             
-            if (window.Toast) {
-                window.Toast.success('Wire model placed!', 'Success', 2000);
+            if (!wireModel) {
+                throw new Error('gltf.scene is null or undefined');
             }
-        } catch (error) {
-            console.error('Failed to load wire.glb:', error);
-            console.error('Error details:', {
-                message: error.message,
-                stack: error.stack
+            
+            console.log('Wire model scene:', wireModel);
+            console.log('Wire model children:', wireModel.children.length);
+            
+            // Calculate bounding box to understand model size
+            const box = new THREE.Box3().setFromObject(wireModel);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            console.log('Model bounding box size:', size);
+            console.log('Model center:', center);
+            
+            // Reset position and scale
+            wireModel.position.set(0, 0, 0);
+            
+            // Auto-scale model if it's too large or too small
+            // Most AR models should be around 0.1-1 meter in size
+            const maxDimension = Math.max(size.x, size.y, size.z);
+            if (maxDimension > 0) {
+                const targetSize = 0.3; // Target 30cm for largest dimension
+                const scaleFactor = targetSize / maxDimension;
+                wireModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                console.log(`Auto-scaled model by factor: ${scaleFactor.toFixed(2)}`);
+            } else {
+                wireModel.scale.set(1, 1, 1);
+                console.log('Using default scale (1, 1, 1)');
+            }
+            
+            // Center the model
+            wireModel.position.sub(center.multiplyScalar(wireModel.scale.x));
+            
+            // Make sure model is visible
+            wireModel.visible = true;
+            wireModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.visible = true;
+                    console.log('Mesh made visible:', child.name || 'unnamed');
+                }
             });
             
+            contentGroup.add(wireModel);
+            console.log('=== WIRE.GLB ADDED TO SCENE ===');
+            console.log('Content group children:', contentGroup.children.length);
+            console.log('Content group visible:', contentGroup.visible);
+            
             if (window.Toast) {
-                window.Toast.error(`Failed to load wire model: ${error.message}`, 'Load Error', 4000);
+                window.Toast.success('Wire model placed!', 'Success', 3000);
+            }
+        } catch (error) {
+            console.error('=== FAILED TO LOAD WIRE.GLB (CATCH BLOCK) ===');
+            console.error('Error type:', error?.constructor?.name || typeof error);
+            console.error('Error message:', error?.message || String(error));
+            console.error('Error stack:', error?.stack || 'No stack trace');
+            console.error('Full error:', error);
+            
+            // Force show error toast with multiple methods
+            const errorMsg = error?.message || String(error) || 'Unknown error';
+            console.error('Showing error toast with message:', errorMsg);
+            
+            if (window.Toast) {
+                window.Toast.error(`Failed to load wire model: ${errorMsg}`, 'Load Error', 8000);
+            } else {
+                console.error('CRITICAL: Toast system not available!');
+                alert(`Failed to load wire.glb: ${errorMsg}`);
             }
             
             console.log('Falling back to orange box for wall');
@@ -567,6 +648,9 @@ async function createContentForSurface(surfaceType) {
  * Creates an orange box as placeholder for walls (when wire.glb fails to load)
  */
 function createWallPlaceholder() {
+    console.log('=== CREATING WALL PLACEHOLDER (ORANGE BOX) ===');
+    console.log('This means wire.glb failed to load or GLTFLoader is not available');
+    
     const geometry = new THREE.BoxGeometry(0.15, 0.15, 0.02); // Flatter box for wall
     const material = new THREE.MeshStandardMaterial({ 
         color: 0xff6b35, // Orange color for wall
@@ -575,8 +659,16 @@ function createWallPlaceholder() {
     });
     cubeMesh = new THREE.Mesh(geometry, material);
     cubeMesh.position.set(0, 0, 0);
+    cubeMesh.visible = true;
     contentGroup.add(cubeMesh);
-    console.log('Orange wall placeholder created');
+    
+    console.log('Orange wall placeholder created and added to contentGroup');
+    console.log('Content group visible:', contentGroup.visible);
+    console.log('Content group children count:', contentGroup.children.length);
+    
+    if (window.Toast) {
+        window.Toast.warning('Using placeholder instead of wire.glb', 'Model Not Loaded', 4000);
+    }
 }
 
 /**
