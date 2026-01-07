@@ -63,6 +63,12 @@ async function initializeAR() {
         // Load and initialize WebXR
         await loadWebXR();
         
+        // Ensure reset button is visible after successful initialization
+        if (resetButton) {
+            resetButton.classList.remove('hidden');
+            console.log('Reset button should be visible');
+        }
+        
         // Show instruction for WebXR users
         const instruction = document.getElementById('webxr-instruction');
         if (instruction) {
@@ -89,6 +95,11 @@ async function initializeAR() {
             startButton.disabled = false;
             startButton.textContent = 'Start AR';
             startButton.classList.remove('hidden');
+        }
+        
+        // Hide reset button on error
+        if (resetButton) {
+            resetButton.classList.add('hidden');
         }
         
         throw error;

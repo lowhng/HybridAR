@@ -32,6 +32,14 @@
 
     <!-- Load Three.js as regular script (compatible) -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
+    <!-- Load GLTFLoader for loading .glb models -->
+    <script type="module">
+        // Load GLTFLoader as ES module and make it available globally
+        import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/loaders/GLTFLoader.js';
+        window.THREE = window.THREE || {};
+        window.THREE.GLTFLoader = GLTFLoader;
+        console.log('GLTFLoader loaded and available');
+    </script>
 
     <!-- Load Platform Detector first -->
     <script src="platform-detector.js"></script>

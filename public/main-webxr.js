@@ -25,6 +25,8 @@ let currentSurfaceType = null; // 'floor' or 'wall'
 let scene, camera, renderer;
 let contentGroup;
 let cubeMesh;
+let wireModel = null; // Wire.glb model
+let placedSurfaceType = null; // 'wall' or 'floor' - surface type when content was placed
 let reticle; // Visual indicator for placement
 let reticleFloorGeometry; // Ring geometry for floor
 let reticleWallGeometry; // Crosshair geometry for wall
@@ -170,16 +172,7 @@ async function initWebXR() {
     contentGroup.visible = false; // Hidden until placed
     scene.add(contentGroup);
 
-    // Create a cube to display
-    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
-    const material = new THREE.MeshStandardMaterial({ 
-        color: 0x00ff00,
-        metalness: 0.3,
-        roughness: 0.6
-    });
-    cubeMesh = new THREE.Mesh(geometry, material);
-    cubeMesh.position.set(0, 0.05, 0); // Raise slightly above surface
-    contentGroup.add(cubeMesh);
+    // Note: Objects will be created dynamically based on surface type when placed
 
     // Create reticle geometries for floor and wall
     // Floor: Ring geometry
@@ -437,21 +430,119 @@ async function initWebXR() {
 }
 
 // ============================================================================
+// CONTENT CREATION
+// ============================================================================
+
+/**
+ * Creates or loads the appropriate 3D object based on surface type
+ * @param {string} surfaceType - 'wall' or 'floor'
+ */
+async function createContentForSurface(surfaceType) {
+    // Clear existing content
+    while (contentGroup.children.length > 0) {
+        const child = contentGroup.children[0];
+        contentGroup.remove(child);
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) {
+            if (Array.isArray(child.material)) {
+                child.material.forEach(mat => mat.dispose());
+            } else {
+                child.material.dispose();
+            }
+        }
+        if (child.dispose) child.dispose();
+    }
+    
+    cubeMesh = null;
+    wireModel = null;
+    placedSurfaceType = surfaceType;
+    
+    if (surfaceType === 'wall') {
+        // Load wire.glb for walls
+        // Check if GLTFLoader is available (might be loaded asynchronously)
+        // Wait a bit for GLTFLoader to load if it's not immediately available
+        let GLTFLoader = THREE?.GLTFLoader || window.THREE?.GLTFLoader;
+        
+        if (!GLTFLoader) {
+            // Wait up to 2 seconds for GLTFLoader to load
+            for (let i = 0; i < 20; i++) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                GLTFLoader = THREE?.GLTFLoader || window.THREE?.GLTFLoader;
+                if (GLTFLoader) break;
+            }
+        }
+        
+        if (!GLTFLoader) {
+            console.error('GLTFLoader not available after waiting. Falling back to green box.');
+            createGreenBox();
+            return;
+        }
+        
+        const loader = new GLTFLoader();
+        try {
+            const gltf = await new Promise((resolve, reject) => {
+                loader.load(
+                    './assets/wire.glb',
+                    (gltf) => resolve(gltf),
+                    undefined,
+                    (error) => reject(error)
+                );
+            });
+            
+            wireModel = gltf.scene;
+            wireModel.position.set(0, 0, 0);
+            // Scale if needed - adjust based on your model size
+            wireModel.scale.set(1, 1, 1);
+            contentGroup.add(wireModel);
+            console.log('Wire.glb loaded for wall');
+        } catch (error) {
+            console.error('Failed to load wire.glb:', error);
+            console.log('Falling back to green box');
+            createGreenBox();
+        }
+    } else {
+        // Create green box for floors
+        createGreenBox();
+    }
+}
+
+/**
+ * Creates a green box (default content for floors)
+ */
+function createGreenBox() {
+    const geometry = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    const material = new THREE.MeshStandardMaterial({ 
+        color: 0x00ff00,
+        metalness: 0.3,
+        roughness: 0.6
+    });
+    cubeMesh = new THREE.Mesh(geometry, material);
+    cubeMesh.position.set(0, 0.05, 0); // Raise slightly above surface
+    contentGroup.add(cubeMesh);
+    console.log('Green box created for floor');
+}
+
+// ============================================================================
 // TAP TO PLACE
 // ============================================================================
 
 function setupTapToPlace() {
     if (!xrSession) return;
     
-    xrSession.addEventListener('select', (event) => {
+    xrSession.addEventListener('select', async (event) => {
         if (!isAnchored) {
             if (reticle.visible) {
                 // Place content at reticle position (hit-test available)
+                const surfaceType = currentSurfaceType || 'floor'; // Default to floor if not detected
+                
+                // Create appropriate content based on surface type
+                await createContentForSurface(surfaceType);
+                
                 contentGroup.position.setFromMatrixPosition(reticle.matrix);
                 contentGroup.visible = true;
                 isAnchored = true;
                 reticle.visible = false;
-                console.log('Content placed at detected surface');
+                console.log(`Content placed at detected surface (${surfaceType})`);
             } else if (!xrHitTestSource) {
                 // Fallback: place content 1 meter in front of camera
                 // This is used when hit-test is not available
@@ -470,13 +561,16 @@ function setupTapToPlace() {
                             direction.applyMatrix4(matrix);
                             direction.sub(position).normalize();
                             
+                            // Default to floor when no hit-test
+                            await createContentForSurface('floor');
+                            
                             // Place 1 meter in front of camera, at same height
                             contentGroup.position.copy(position);
                             contentGroup.position.addScaledVector(direction, 1.0);
                             contentGroup.position.y -= 0.3; // Lower slightly
                             contentGroup.visible = true;
                             isAnchored = true;
-                            console.log('Content placed in front of camera');
+                            console.log('Content placed in front of camera (floor default)');
                         }
                     }
                 }
@@ -675,12 +769,14 @@ function onXRFrame(timestamp, frame) {
         }
     }
 
-    // Animate the cube
+    // Animate the cube (only if it's a cube, not wire model)
     if (cubeMesh && isAnchored) {
         animationTime = timestamp * 0.001;
         cubeMesh.rotation.y = animationTime;
         cubeMesh.rotation.x = animationTime * 0.5;
     }
+    
+    // Wire model stays static (no rotation)
 
     // Render - Three.js WebXRManager handles camera automatically
     renderer.render(scene, camera);
@@ -704,6 +800,7 @@ function resetAnchor() {
     console.log('Reset button pressed - resetting anchor...');
     
     isAnchored = false;
+    placedSurfaceType = null;
     
     // Force hide the content group and all its children
     if (contentGroup) {
@@ -713,20 +810,39 @@ function resetAnchor() {
         contentGroup.rotation.set(0, 0, 0);
         contentGroup.scale.set(1, 1, 1);
         
-        // Also hide individual children as a safety measure
-        contentGroup.children.forEach(child => {
-            if (child.visible !== undefined) {
-                child.visible = false;
+        // Clear all children
+        while (contentGroup.children.length > 0) {
+            const child = contentGroup.children[0];
+            contentGroup.remove(child);
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => mat.dispose());
+                } else {
+                    child.material.dispose();
+                }
             }
-        });
+            if (child.traverse) {
+                child.traverse((obj) => {
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) {
+                            obj.material.forEach(mat => mat.dispose());
+                        } else {
+                            obj.material.dispose();
+                        }
+                    }
+                });
+            }
+            if (child.dispose) child.dispose();
+        }
         
-        console.log('Content group hidden and position reset');
+        console.log('Content group cleared and position reset');
     }
     
-    // Reset cube mesh visibility directly as well
-    if (cubeMesh) {
-        cubeMesh.visible = false;
-    }
+    // Reset references
+    cubeMesh = null;
+    wireModel = null;
     
     // Reset reticle state properly
     if (xrHitTestSource) {
