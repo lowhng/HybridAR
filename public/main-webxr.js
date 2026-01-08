@@ -638,9 +638,9 @@ async function createContentForSurface(surfaceType) {
             console.log('Model bounding box size:', size);
             console.log('Model center:', center);
             
-            // Reset position, rotation, and scale for fresh spawn
+            // Reset position and scale for fresh spawn
+            // Don't reset rotation - preserve model's original rotation from GLB file
             wireModel.position.set(0, 0, 0);
-            wireModel.rotation.set(0, 0, 0);
             wireModel.scale.set(1, 1, 1);
             
             // Auto-scale model - similar to bouncing-band's approach
@@ -778,9 +778,34 @@ function setupTapToPlace() {
             // Create appropriate content based on detected surface type
             await createContentForSurface(currentSurfaceType);
             
-            // Apply full matrix (position + rotation) from reticle so model faces correct direction
-            contentGroup.matrix.copy(reticle.matrix);
-            contentGroup.matrixAutoUpdate = false;
+            // Set position from reticle
+            contentGroup.position.setFromMatrixPosition(reticle.matrix);
+            
+            // For walls: Make model face outward from wall (like a picture hanging on wall)
+            // The reticle matrix's Z-axis is the surface normal (pointing outward)
+            if (currentSurfaceType === 'wall') {
+                // Extract the surface normal (outward direction) from reticle matrix
+                // Column 2 (Z-axis) of the matrix is the normal pointing outward from the wall
+                const wallNormal = new THREE.Vector3();
+                wallNormal.setFromMatrixColumn(reticle.matrix, 2);
+                wallNormal.normalize();
+                
+                // Create a target point in the direction of the normal (outward from wall)
+                const targetPoint = new THREE.Vector3();
+                targetPoint.copy(contentGroup.position);
+                targetPoint.add(wallNormal);
+                
+                // Make the model look in the direction of the normal (face outward)
+                contentGroup.lookAt(targetPoint);
+            } else {
+                // For floors, use the reticle's rotation directly
+                const reticleQuaternion = new THREE.Quaternion();
+                reticleQuaternion.setFromRotationMatrix(reticle.matrix);
+                contentGroup.quaternion.copy(reticleQuaternion);
+            }
+            
+            contentGroup.scale.set(1, 1, 1);
+            contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
             isAnchored = true;
             console.log(`Content placed at detected surface (${currentSurfaceType})`);
