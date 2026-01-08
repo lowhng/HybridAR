@@ -324,13 +324,18 @@ async function initWebXR() {
     reticle.visible = false;
     scene.add(reticle);
 
-    // Add lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    // Add lighting - increased intensity to address darkness
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased from 0.7 to 1.0
     scene.add(ambientLight);
     
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Increased from 0.8 to 1.2
     directionalLight.position.set(5, 10, 5);
     scene.add(directionalLight);
+    
+    // Add additional fill light to reduce darkness
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    fillLight.position.set(-5, 5, -5);
+    scene.add(fillLight);
 
     // Start WebXR session
     try {
@@ -619,8 +624,8 @@ async function createContentForSurface(surfaceType) {
             console.log('GLTF object:', gltf);
             console.log('Scene children count:', gltf.scene ? gltf.scene.children.length : 0);
             
-            // Following bouncing-band: use the scene directly or first child
-            wireModel = gltf.scene;
+            // Clone the scene so each spawn gets a fresh copy with reset rotation
+            wireModel = gltf.scene.clone();
             
             if (!wireModel) {
                 throw new Error('gltf.scene is null or undefined');
@@ -633,8 +638,10 @@ async function createContentForSurface(surfaceType) {
             console.log('Model bounding box size:', size);
             console.log('Model center:', center);
             
-            // Reset position and scale
+            // Reset position, rotation, and scale for fresh spawn
             wireModel.position.set(0, 0, 0);
+            wireModel.rotation.set(0, 0, 0);
+            wireModel.scale.set(1, 1, 1);
             
             // Auto-scale model - similar to bouncing-band's approach
             const maxDimension = Math.max(size.x, size.y, size.z);
@@ -771,7 +778,9 @@ function setupTapToPlace() {
             // Create appropriate content based on detected surface type
             await createContentForSurface(currentSurfaceType);
             
-            contentGroup.position.setFromMatrixPosition(reticle.matrix);
+            // Apply full matrix (position + rotation) from reticle so model faces correct direction
+            contentGroup.matrix.copy(reticle.matrix);
+            contentGroup.matrixAutoUpdate = false;
             contentGroup.visible = true;
             isAnchored = true;
             console.log(`Content placed at detected surface (${currentSurfaceType})`);
@@ -805,16 +814,21 @@ function setupTapToPlace() {
                 
                 // Place at distance in front of camera
                 const placementDistance = 1.0; // 1 meter
-                contentGroup.position.copy(position);
-                contentGroup.position.addScaledVector(direction, placementDistance);
+                const targetPosition = new THREE.Vector3();
+                targetPosition.copy(position);
+                targetPosition.addScaledVector(direction, placementDistance);
                 
                 // Adjust vertical position based on surface type
                 if (inferredSurfaceType === 'floor') {
                     // Lower content to approximate floor level
-                    contentGroup.position.y = position.y - 1.0; // Assume ~1m below camera is floor
+                    targetPosition.y = position.y - 1.0; // Assume ~1m below camera is floor
                 }
                 // For walls, keep at the aimed position
                 
+                // Set position and make model face camera direction
+                contentGroup.position.copy(targetPosition);
+                contentGroup.lookAt(position); // Face towards camera
+                contentGroup.matrixAutoUpdate = true;
                 contentGroup.visible = true;
                 isAnchored = true;
                 console.log(`Content placed in front of camera as ${inferredSurfaceType}`);
@@ -1052,13 +1066,15 @@ function resetAnchor() {
     isAnchored = false;
     placedSurfaceType = null;
     
-    // Force hide the content group and all its children
-    if (contentGroup) {
-        contentGroup.visible = false;
-        // Also reset position to ensure it's not visible
-        contentGroup.position.set(0, 0, 0);
-        contentGroup.rotation.set(0, 0, 0);
-        contentGroup.scale.set(1, 1, 1);
+        // Force hide the content group and all its children
+        if (contentGroup) {
+            contentGroup.visible = false;
+            // Also reset position, rotation, and matrix to ensure it's not visible
+            contentGroup.position.set(0, 0, 0);
+            contentGroup.rotation.set(0, 0, 0);
+            contentGroup.scale.set(1, 1, 1);
+            contentGroup.matrix.identity();
+            contentGroup.matrixAutoUpdate = true;
         
         // Clear all children
         while (contentGroup.children.length > 0) {
