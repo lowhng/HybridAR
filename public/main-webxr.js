@@ -797,6 +797,14 @@ function setupTapToPlace() {
                 
                 // Make the model look in the direction of the normal (face outward)
                 contentGroup.lookAt(targetPoint);
+                
+                // Rotate 90 degrees around X-axis to stand the model upright
+                // This makes the wires face outward instead of pointing down
+                const uprightRotation = new THREE.Quaternion().setFromAxisAngle(
+                    new THREE.Vector3(1, 0, 0), 
+                    -Math.PI / 2  // -90 degrees to rotate from lying flat to standing upright
+                );
+                contentGroup.quaternion.multiplyQuaternions(uprightRotation, contentGroup.quaternion);
             } else {
                 // For floors, use the reticle's rotation directly
                 const reticleQuaternion = new THREE.Quaternion();
