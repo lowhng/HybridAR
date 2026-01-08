@@ -13,7 +13,6 @@ if (typeof window !== 'undefined') {
     console.log('=== main-webxr.js loaded ===');
     console.log('THREE available:', typeof THREE !== 'undefined');
     console.log('THREE.GLTFLoader available:', typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined');
-    console.log('window.GLTFLoader available:', typeof window.GLTFLoader !== 'undefined');
     
     if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader === 'undefined') {
         console.warn('WARNING: THREE exists but THREE.GLTFLoader is not defined!');
@@ -23,100 +22,74 @@ if (typeof window !== 'undefined') {
 }
 
 // ============================================================================
-// GLTF LOADER SETUP (following bouncing-band pattern)
+// GLTF LOADER SETUP (simple and straightforward)
 // ============================================================================
 // Create a single GLTFLoader instance that will be used throughout the app
-// This matches how bouncing-band handles GLB loading
 let gltfLoader = null;
 
 /**
- * Initialize the GLTFLoader - should be called after THREE.js is loaded
- * Following the bouncing-band pattern of having a single loader instance
+ * Initialize the GLTFLoader - simple check and create instance
  */
 function initGLTFLoader() {
     if (gltfLoader) {
-        console.log('GLTFLoader already initialized, reusing instance');
-        return gltfLoader; // Already initialized
+        return gltfLoader; // Already initialized, reuse instance
     }
     
-    console.log('=== Initializing GLTFLoader ===');
-    console.log('window._gltfLoaderReady flag:', window._gltfLoaderReady);
-    console.log('Checking THREE:', typeof THREE);
-    console.log('Checking THREE.GLTFLoader:', window.THREE?.GLTFLoader ? 'exists' : 'undefined');
-    console.log('Checking window.GLTFLoader:', window.GLTFLoader ? 'exists' : 'undefined');
-    
-    // Check if GLTFLoader is available on THREE namespace (classic script loading)
-    if (window.THREE && window.THREE.GLTFLoader) {
-        try {
-            gltfLoader = new window.THREE.GLTFLoader();
-            console.log('✅ GLTFLoader initialized from THREE.GLTFLoader');
-            return gltfLoader;
-        } catch (e) {
-            console.error('Failed to instantiate THREE.GLTFLoader:', e);
+    if (typeof THREE === 'undefined' || typeof THREE.GLTFLoader === 'undefined') {
+        console.error('❌ GLTFLoader not available! Make sure GLTFLoader.js script is loaded after Three.js');
+        if (window.Toast) {
+            window.Toast.error('GLTFLoader not found. 3D models cannot be loaded. Please refresh the page.', 'Loader Error', 8000);
         }
+        return null;
     }
     
-    // Check if GLTFLoader is available as standalone global
-    if (window.GLTFLoader) {
-        try {
-            gltfLoader = new window.GLTFLoader();
-            console.log('✅ GLTFLoader initialized from window.GLTFLoader');
-            // Also attach to THREE for consistency
-            if (window.THREE && !window.THREE.GLTFLoader) {
-                window.THREE.GLTFLoader = window.GLTFLoader;
-            }
-            return gltfLoader;
-        } catch (e) {
-            console.error('Failed to instantiate window.GLTFLoader:', e);
+    try {
+        gltfLoader = new THREE.GLTFLoader();
+        console.log('✅ GLTFLoader initialized');
+        return gltfLoader;
+    } catch (e) {
+        console.error('❌ Failed to create GLTFLoader instance:', e);
+        if (window.Toast) {
+            window.Toast.error('Failed to initialize GLTFLoader. Please refresh the page.', 'Loader Error', 8000);
         }
+        return null;
     }
-    
-    // Log all THREE properties to help debug
-    if (window.THREE) {
-        const loaderKeys = Object.keys(window.THREE).filter(k => k.toLowerCase().includes('loader'));
-        console.log('Available loaders on THREE:', loaderKeys.length > 0 ? loaderKeys : 'none');
-    }
-    
-    // Final attempt: wait a bit and try again (in case script is still loading)
-    console.warn('GLTFLoader not found immediately. The page might still be loading scripts...');
-    console.error('❌ GLTFLoader not available! Check that GLTFLoader.js script is loaded correctly.');
-    if (window.Toast) {
-        window.Toast.error('GLTFLoader not found. 3D models cannot be loaded. Try refreshing the page.', 'Loader Error', 8000);
-    }
-    return null;
 }
 
 /**
- * Load a GLB/GLTF model using the bouncing-band Promise pattern
+ * Load a GLB/GLTF model - simple and straightforward
  * @param {string} url - Path to the GLB file
- * @returns {Promise<THREE.Group>} - The loaded model's scene
+ * @returns {Promise<Object>} - The loaded GLTF object with scene property
  */
 function loadModel(url) {
     return new Promise((resolve, reject) => {
+        // Initialize loader if needed
         if (!gltfLoader) {
             gltfLoader = initGLTFLoader();
         }
         
         if (!gltfLoader) {
-            reject(new Error('GLTFLoader not available'));
+            reject(new Error('GLTFLoader not available. Please ensure GLTFLoader.js is loaded.'));
             return;
         }
         
+        // Load the model
         gltfLoader.load(
             url,
             (gltf) => {
-                console.log('Model loaded successfully:', url);
+                console.log('✅ Model loaded successfully:', url);
                 resolve(gltf);
             },
             (progress) => {
+                // Progress callback (optional)
                 if (progress.total > 0) {
                     const percent = Math.round((progress.loaded / progress.total) * 100);
                     console.log(`Loading ${url}: ${percent}%`);
                 }
             },
             (error) => {
-                console.error('Failed to load model:', url, error);
-                reject(error);
+                console.error('❌ Failed to load model:', url, error);
+                reject(new Error(`Failed to load model from ${url}: ${error.message || error}`));
             }
         );
     });
@@ -640,7 +613,7 @@ async function createContentForSurface(surfaceType) {
             console.log('Using loadModel() function (bouncing-band pattern)');
             
             // Use the loadModel function (bouncing-band pattern)
-            const gltf = await loadModel('./assets/wire.glb');
+            const gltf = await loadModel('/assets/wire.glb');
             
             console.log('=== WIRE.GLB LOADED SUCCESSFULLY ===');
             console.log('GLTF object:', gltf);

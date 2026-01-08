@@ -44,61 +44,18 @@
         }
     </script>
     
-    <!-- Load GLTFLoader - using the approach that bouncing-band uses (they bundle, we use dynamic import) -->
-    <!-- The key difference: bouncing-band bundles everything, but we can use dynamic ES module import -->
-    <script type="module">
-        (async function() {
-            try {
-                // Import GLTFLoader as ES module (this is the modern, reliable way)
-                const { GLTFLoader } = await import('https://cdn.jsdelivr.net/npm/three@0.149.0/examples/jsm/loaders/GLTFLoader.js');
-                
-                // Wait for THREE to be available
-                let attempts = 0;
-                while (typeof THREE === 'undefined' && attempts < 50) {
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                    attempts++;
-                }
-                
-                if (typeof THREE === 'undefined') {
-                    throw new Error('THREE.js not available');
-                }
-                
-                // Attach to THREE namespace for compatibility with existing code
-                THREE.GLTFLoader = GLTFLoader;
-                window.GLTFLoader = GLTFLoader;
-                window._gltfLoaderReady = true;
-                console.log('✅ GLTFLoader loaded successfully via ES module');
-                
-                // Test instantiation
-                try {
-                    const testLoader = new THREE.GLTFLoader();
-                    console.log('✅ GLTFLoader instantiation test passed');
-                } catch (e) {
-                    console.error('❌ GLTFLoader instantiation failed:', e);
-                    window._gltfLoaderReady = false;
-                }
-            } catch (error) {
-                console.error('❌ Failed to load GLTFLoader:', error);
-                window._gltfLoaderReady = false;
-                
-                // Try fallback: use unpkg
-                try {
-                    console.log('Trying fallback: unpkg...');
-                    const { GLTFLoader: GLTFLoaderFallback } = await import('https://unpkg.com/three@0.149.0/examples/jsm/loaders/GLTFLoader.js');
-                    if (typeof THREE !== 'undefined') {
-                        THREE.GLTFLoader = GLTFLoaderFallback;
-                        window.GLTFLoader = GLTFLoaderFallback;
-                        window._gltfLoaderReady = true;
-                        console.log('✅ GLTFLoader loaded via fallback (unpkg)');
-                    }
-                } catch (fallbackError) {
-                    console.error('❌ Fallback also failed:', fallbackError);
-                    if (window.Toast) {
-                        window.Toast.error('Failed to load GLTFLoader. 3D models will not work. Please check your internet connection and try refreshing.', 'Loader Error', 10000);
-                    }
-                }
+    <!-- Load GLTFLoader - using synchronous script tag (simple and reliable, like bouncing-band) -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script>
+        // Verify GLTFLoader loaded correctly
+        if (typeof THREE !== 'undefined' && typeof THREE.GLTFLoader !== 'undefined') {
+            console.log('✅ GLTFLoader loaded successfully');
+        } else {
+            console.error('❌ GLTFLoader failed to load!');
+            if (window.Toast) {
+                window.Toast.error('Failed to load GLTFLoader. 3D models will not work. Please check your internet connection and try refreshing.', 'Loader Error', 10000);
             }
-        })();
+        }
     </script>
 
     <!-- Load Platform Detector first -->
