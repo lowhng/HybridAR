@@ -638,9 +638,11 @@ async function createContentForSurface(surfaceType) {
             console.log('Model bounding box size:', size);
             console.log('Model center:', center);
             
-            // Reset position and scale for fresh spawn
-            // Don't reset rotation - preserve model's original rotation from GLB file
+            // Reset position, rotation, and scale for fresh spawn
+            // Reset rotation so model orientation is controlled by contentGroup rotation
             wireModel.position.set(0, 0, 0);
+            wireModel.rotation.set(0, 0, 0);
+            wireModel.quaternion.set(0, 0, 0, 1);
             wireModel.scale.set(1, 1, 1);
             
             // Auto-scale model - similar to bouncing-band's approach
@@ -804,12 +806,19 @@ function setupTapToPlace() {
                 wallUp.setFromMatrixColumn(reticle.matrix, 1).normalize();
                 wallNormal.setFromMatrixColumn(reticle.matrix, 2).normalize();
                 
-                // Create a rotation matrix where:
-                // - Forward (Z) faces outward (wallNormal)
-                // - Up (Y) aligns with wall's up direction
-                // - Right (X) aligns with wall's right direction
+                // For a photo frame on a wall:
+                // - Model's right (X) should align with wall's right
+                // - Model's up (Y) should align with wall's up
+                // - Model's forward (-Z in Three.js) should point toward viewer (opposite of wallNormal)
+                //   So model's Z should point in direction of -wallNormal
+                // 
+                // Create rotation matrix where:
+                // - X-axis = wallRight (model's right)
+                // - Y-axis = wallUp (model's up)
+                // - Z-axis = -wallNormal (so -Z faces outward, like a photo frame)
+                const wallNormalNegated = wallNormal.clone().negate();
                 const rotationMatrix = new THREE.Matrix4();
-                rotationMatrix.makeBasis(wallRight, wallUp, wallNormal);
+                rotationMatrix.makeBasis(wallRight, wallUp, wallNormalNegated);
                 
                 // Extract quaternion from rotation matrix
                 const wallQuaternion = new THREE.Quaternion();
@@ -818,13 +827,15 @@ function setupTapToPlace() {
                 // Apply the wall orientation
                 contentGroup.quaternion.copy(wallQuaternion);
                 
-                // Rotate 90 degrees around X-axis to stand the model upright
-                // This makes the wires face outward instead of pointing down
-                const uprightRotation = new THREE.Quaternion().setFromAxisAngle(
-                    new THREE.Vector3(1, 0, 0), 
-                    -Math.PI / 2  // -90 degrees to rotate from lying flat to standing upright
-                );
-                contentGroup.quaternion.multiplyQuaternions(uprightRotation, contentGroup.quaternion);
+                // Debug: Log orientation vectors
+                console.log('Wall orientation - wallRight:', 
+                    `(${wallRight.x.toFixed(2)}, ${wallRight.y.toFixed(2)}, ${wallRight.z.toFixed(2)})`);
+                console.log('Wall orientation - wallUp:', 
+                    `(${wallUp.x.toFixed(2)}, ${wallUp.y.toFixed(2)}, ${wallUp.z.toFixed(2)})`);
+                console.log('Wall orientation - wallNormal (outward):', 
+                    `(${wallNormal.x.toFixed(2)}, ${wallNormal.y.toFixed(2)}, ${wallNormal.z.toFixed(2)})`);
+                console.log('Model Z-axis should point:', 
+                    `(${wallNormalNegated.x.toFixed(2)}, ${wallNormalNegated.y.toFixed(2)}, ${wallNormalNegated.z.toFixed(2)})`);
             } else {
                 // For floors, use the reticle's rotation directly
                 const reticleQuaternion = new THREE.Quaternion();
