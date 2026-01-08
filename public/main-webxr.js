@@ -778,25 +778,45 @@ function setupTapToPlace() {
             // Create appropriate content based on detected surface type
             await createContentForSurface(currentSurfaceType);
             
+            // CRITICAL: Reset all transforms before applying new ones
+            // This ensures each spawn starts fresh and doesn't retain previous rotation
+            contentGroup.position.set(0, 0, 0);
+            contentGroup.rotation.set(0, 0, 0);
+            contentGroup.scale.set(1, 1, 1);
+            contentGroup.quaternion.set(0, 0, 0, 1); // Reset quaternion to identity
+            contentGroup.matrix.identity();
+            
             // Set position from reticle
             contentGroup.position.setFromMatrixPosition(reticle.matrix);
             
             // For walls: Make model face outward from wall (like a picture hanging on wall)
             // The reticle matrix's Z-axis is the surface normal (pointing outward)
             if (currentSurfaceType === 'wall') {
-                // Extract the surface normal (outward direction) from reticle matrix
-                // Column 2 (Z-axis) of the matrix is the normal pointing outward from the wall
+                // Extract axes from reticle matrix
+                // X-axis: right direction along the wall
+                // Y-axis: up direction along the wall  
+                // Z-axis: normal pointing outward from wall
+                const wallRight = new THREE.Vector3();
+                const wallUp = new THREE.Vector3();
                 const wallNormal = new THREE.Vector3();
-                wallNormal.setFromMatrixColumn(reticle.matrix, 2);
-                wallNormal.normalize();
                 
-                // Create a target point in the direction of the normal (outward from wall)
-                const targetPoint = new THREE.Vector3();
-                targetPoint.copy(contentGroup.position);
-                targetPoint.add(wallNormal);
+                wallRight.setFromMatrixColumn(reticle.matrix, 0).normalize();
+                wallUp.setFromMatrixColumn(reticle.matrix, 1).normalize();
+                wallNormal.setFromMatrixColumn(reticle.matrix, 2).normalize();
                 
-                // Make the model look in the direction of the normal (face outward)
-                contentGroup.lookAt(targetPoint);
+                // Create a rotation matrix where:
+                // - Forward (Z) faces outward (wallNormal)
+                // - Up (Y) aligns with wall's up direction
+                // - Right (X) aligns with wall's right direction
+                const rotationMatrix = new THREE.Matrix4();
+                rotationMatrix.makeBasis(wallRight, wallUp, wallNormal);
+                
+                // Extract quaternion from rotation matrix
+                const wallQuaternion = new THREE.Quaternion();
+                wallQuaternion.setFromRotationMatrix(rotationMatrix);
+                
+                // Apply the wall orientation
+                contentGroup.quaternion.copy(wallQuaternion);
                 
                 // Rotate 90 degrees around X-axis to stand the model upright
                 // This makes the wires face outward instead of pointing down
@@ -812,7 +832,6 @@ function setupTapToPlace() {
                 contentGroup.quaternion.copy(reticleQuaternion);
             }
             
-            contentGroup.scale.set(1, 1, 1);
             contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
             isAnchored = true;
