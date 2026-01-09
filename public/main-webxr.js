@@ -802,12 +802,13 @@ function setupTapToPlace() {
             // The model is currently facing downward, so we rotate around X-axis
             if (currentSurfaceType === 'wall') {
                 const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
-                    new THREE.Vector3(1, 0, 0), 
-                    -Math.PI / 2  // -90 degrees to rotate from facing down to facing outward/up
+                  new THREE.Vector3(1, 0, 0),
+                  -Math.PI / 2
                 );
-                // Apply rotation: first apply the reticle orientation, then rotate upward
-                contentGroup.quaternion.multiplyQuaternions(upwardRotation, contentGroup.quaternion);
-            }
+              
+                // apply AFTER current orientation (local space)
+                contentGroup.quaternion.multiply(upwardRotation);
+              }
             
             contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
