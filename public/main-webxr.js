@@ -798,6 +798,17 @@ function setupTapToPlace() {
             reticleQuaternion.setFromRotationMatrix(reticle.matrix);
             contentGroup.quaternion.copy(reticleQuaternion);
             
+            // For wall surfaces, rotate the content 90 degrees upward to face outward from the wall
+            // The model is currently facing downward, so we rotate around X-axis
+            if (currentSurfaceType === 'wall') {
+                const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
+                    new THREE.Vector3(1, 0, 0), 
+                    -Math.PI / 2  // -90 degrees to rotate from facing down to facing outward/up
+                );
+                // Apply rotation: first apply the reticle orientation, then rotate upward
+                contentGroup.quaternion.multiplyQuaternions(upwardRotation, contentGroup.quaternion);
+            }
+            
             contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
             isAnchored = true;
