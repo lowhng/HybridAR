@@ -747,12 +747,10 @@ function createDebugPlane(planeMatrix, surfaceType) {
     // Position at origin (relative to contentGroup)
     debugPlane.position.set(0, 0, 0);
     
-    // Extract rotation from the plane matrix to show detected plane orientation
-    // Note: This will be relative to contentGroup, so we'll see both the plane
-    // and how the model is oriented relative to it
-    const planeQuaternion = new THREE.Quaternion();
-    planeQuaternion.setFromRotationMatrix(planeMatrix);
-    debugPlane.quaternion.copy(planeQuaternion);
+    // The debug plane should have identity rotation relative to contentGroup
+    // because contentGroup will be rotated to the correct orientation
+    // This way, the debug plane will show the correct plane orientation
+    debugPlane.quaternion.set(0, 0, 0, 1);
     
     // Add wireframe outline for better visibility
     const wireframeGeometry = new THREE.PlaneGeometry(planeSize, planeSize);
@@ -764,7 +762,7 @@ function createDebugPlane(planeMatrix, surfaceType) {
     });
     const wireframe = new THREE.Mesh(wireframeGeometry, wireframeMaterial);
     wireframe.position.set(0, 0, 0);
-    wireframe.quaternion.copy(planeQuaternion);
+    wireframe.quaternion.set(0, 0, 0, 1); // Identity - will inherit from contentGroup
     
     // Add both to a group so we can manage them together
     const planeGroup = new THREE.Group();
@@ -881,46 +879,56 @@ function setupTapToPlace() {
             createDebugPlane(reticle.matrix, currentSurfaceType);
             
             // For walls: Make model face outward from wall (like a picture hanging on wall)
-            // The reticle matrix represents the plane coordinate system:
-            // - Column 0 (X): right direction along the wall
-            // - Column 1 (Y): up direction along the wall  
-            // - Column 2 (Z): normal pointing outward from wall
+            // The reticle matrix represents the plane coordinate system, but we need to
+            // correct it to ensure the wall is properly vertical
             if (currentSurfaceType === 'wall') {
-                // Extract axes from reticle matrix
-                const wallRight = new THREE.Vector3();
-                const wallUp = new THREE.Vector3();
+                // Extract normal from reticle matrix (this should point outward from wall)
                 const wallNormal = new THREE.Vector3();
-                
-                wallRight.setFromMatrixColumn(reticle.matrix, 0).normalize();
-                wallUp.setFromMatrixColumn(reticle.matrix, 1).normalize();
                 wallNormal.setFromMatrixColumn(reticle.matrix, 2).normalize();
                 
+                // For a vertical wall, force the up vector to be world up (0, 1, 0)
+                const worldUp = new THREE.Vector3(0, 1, 0);
+                
+                // Calculate the right vector: right = up × normal (in right-handed system)
+                // This ensures the plane is vertical with up pointing up
+                const wallRight = new THREE.Vector3();
+                wallRight.crossVectors(worldUp, wallNormal).normalize();
+                
+                // If the cross product is zero or very small (normal is nearly vertical),
+                // use a default horizontal direction
+                if (wallRight.length() < 0.1) {
+                    // Normal is nearly vertical, use a default right vector
+                    wallRight.set(1, 0, 0);
+                    // Recalculate normal to be horizontal
+                    wallNormal.crossVectors(wallRight, worldUp).normalize();
+                }
+                
                 // For a photo frame on a wall, we want:
-                // - Model's local X (right) = wall's right
-                // - Model's local Y (up) = wall's up
+                // - Model's local X (right) = wall's right (horizontal along wall)
+                // - Model's local Y (up) = world up (vertical)
                 // - Model's local -Z (forward in Three.js) = wall's normal (outward)
                 //   This means model's Z should point opposite to wall normal
                 //
                 // Create rotation matrix using makeBasis:
                 // makeBasis(x, y, z) sets the matrix columns to x, y, z
-                // So we want: X=wallRight, Y=wallUp, Z=-wallNormal
+                // So we want: X=wallRight, Y=worldUp, Z=-wallNormal
                 const wallNormalNegated = wallNormal.clone().negate();
                 const rotationMatrix = new THREE.Matrix4();
-                rotationMatrix.makeBasis(wallRight, wallUp, wallNormalNegated);
+                rotationMatrix.makeBasis(wallRight, worldUp, wallNormalNegated);
                 
                 // Extract quaternion from rotation matrix
                 const wallQuaternion = new THREE.Quaternion();
                 wallQuaternion.setFromRotationMatrix(rotationMatrix);
                 
-                // Apply the wall orientation
+                // Apply the corrected wall orientation
                 contentGroup.quaternion.copy(wallQuaternion);
                 
                 // Debug: Log orientation vectors
-                console.log('=== WALL ORIENTATION DEBUG ===');
-                console.log('Wall right (X):', 
+                console.log('=== WALL ORIENTATION DEBUG (CORRECTED) ===');
+                console.log('Wall right (X, horizontal):', 
                     `(${wallRight.x.toFixed(3)}, ${wallRight.y.toFixed(3)}, ${wallRight.z.toFixed(3)})`);
-                console.log('Wall up (Y):', 
-                    `(${wallUp.x.toFixed(3)}, ${wallUp.y.toFixed(3)}, ${wallUp.z.toFixed(3)})`);
+                console.log('Wall up (Y, world up):', 
+                    `(${worldUp.x.toFixed(3)}, ${worldUp.y.toFixed(3)}, ${worldUp.z.toFixed(3)})`);
                 console.log('Wall normal (Z, outward):', 
                     `(${wallNormal.x.toFixed(3)}, ${wallNormal.y.toFixed(3)}, ${wallNormal.z.toFixed(3)})`);
                 console.log('Model Z-axis (should be -normal):', 
@@ -932,22 +940,32 @@ function setupTapToPlace() {
                 contentGroup.quaternion.copy(reticleQuaternion);
             }
             
-            // Adjust debug plane orientation to compensate for contentGroup rotation
-            // so it shows the detected plane orientation correctly
+            // Adjust debug plane orientation to align with contentGroup
+            // For walls, both use the corrected orientation, so they should already match
+            // For floors, both use the reticle matrix, so they should also match
+            // But we need to ensure the debug plane is relative to contentGroup's rotation
             if (debugPlane) {
-                const reticleQuaternion = new THREE.Quaternion();
-                reticleQuaternion.setFromRotationMatrix(reticle.matrix);
-                
-                // Calculate inverse of contentGroup rotation
-                const contentGroupQuaternionInverse = contentGroup.quaternion.clone().invert();
-                
-                // Debug plane should show reticle orientation, so compensate for contentGroup rotation
-                const adjustedQuaternion = reticleQuaternion.clone().multiply(contentGroupQuaternionInverse);
-                debugPlane.quaternion.copy(adjustedQuaternion);
-                
-                // Also update wireframe if it exists
-                if (debugPlane.children && debugPlane.children.length > 1) {
-                    debugPlane.children[1].quaternion.copy(adjustedQuaternion);
+                if (currentSurfaceType === 'wall') {
+                    // For walls, both debug plane and contentGroup use corrected orientation
+                    // The debug plane was created with corrected orientation, and contentGroup
+                    // now also uses corrected orientation, so they should align
+                    // Reset debug plane to identity (relative to contentGroup) since
+                    // contentGroup already has the correct rotation
+                    debugPlane.quaternion.set(0, 0, 0, 1);
+                    
+                    // Also update wireframe if it exists
+                    if (debugPlane.children && debugPlane.children.length > 1) {
+                        debugPlane.children[1].quaternion.set(0, 0, 0, 1);
+                    }
+                } else {
+                    // For floors, both use reticle matrix directly, so they should align
+                    // Reset to identity relative to contentGroup
+                    debugPlane.quaternion.set(0, 0, 0, 1);
+                    
+                    // Also update wireframe if it exists
+                    if (debugPlane.children && debugPlane.children.length > 1) {
+                        debugPlane.children[1].quaternion.set(0, 0, 0, 1);
+                    }
                 }
             }
             
