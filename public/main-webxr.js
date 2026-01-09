@@ -132,11 +132,76 @@ let animationTime = 0;
 // DOM ELEMENTS
 // ============================================================================
 let arContainer = null;
+let overlayRoot = null;
+let overlayUI = null;
 
 function getDOMElements() {
     if (!arContainer) {
         arContainer = document.getElementById('ar-container');
     }
+}
+
+/**
+ * Creates or ensures the XR overlay root element exists
+ * This overlay will be used for DOM overlay in WebXR sessions
+ */
+function ensureOverlayRoot() {
+    // Check if overlay already exists
+    overlayRoot = document.getElementById('xr-overlay');
+    
+    if (!overlayRoot) {
+        // Create overlay root
+        overlayRoot = document.createElement('div');
+        overlayRoot.id = 'xr-overlay';
+        
+        // Style the overlay root - full screen, pointer-events: none by default
+        overlayRoot.style.position = 'fixed';
+        overlayRoot.style.top = '0';
+        overlayRoot.style.left = '0';
+        overlayRoot.style.width = '100%';
+        overlayRoot.style.height = '100%';
+        overlayRoot.style.pointerEvents = 'none';
+        overlayRoot.style.zIndex = '99999';
+        
+        // Create UI container inside overlay
+        overlayUI = document.createElement('div');
+        overlayUI.id = 'xr-overlay-ui';
+        overlayUI.style.pointerEvents = 'auto';
+        
+        overlayRoot.appendChild(overlayUI);
+        document.body.appendChild(overlayRoot);
+        
+        console.log('Overlay root created');
+    } else {
+        // Overlay exists, find or create UI container
+        overlayUI = document.getElementById('xr-overlay-ui');
+        if (!overlayUI) {
+            overlayUI = document.createElement('div');
+            overlayUI.id = 'xr-overlay-ui';
+            overlayUI.style.pointerEvents = 'auto';
+            overlayRoot.appendChild(overlayUI);
+        }
+        console.log('Overlay root found');
+    }
+    
+    // Move reset button into overlay UI if it exists and isn't already there
+    const resetButton = document.getElementById('reset-button');
+    if (resetButton && resetButton.parentElement !== overlayUI) {
+        overlayUI.appendChild(resetButton);
+        console.log('Reset button moved into overlay UI');
+    }
+    
+    // Ensure toast container is accessible (can be sibling or inside overlay)
+    const toastContainer = document.getElementById('toast-container');
+    if (toastContainer && !overlayRoot.contains(toastContainer)) {
+        // Keep toast container as sibling to overlay (it has its own z-index)
+        // Just ensure it's in the DOM
+        if (!document.body.contains(toastContainer)) {
+            document.body.appendChild(toastContainer);
+        }
+    }
+    
+    return overlayRoot;
 }
 
 // ============================================================================
@@ -149,6 +214,9 @@ async function initWebXR() {
     if (!arContainer) {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
     }
+    
+    // Create/ensure overlay root exists for DOM overlay support
+    ensureOverlayRoot();
     
     if (typeof THREE === 'undefined') {
         throw new Error('THREE.js is not loaded. Please ensure Three.js is loaded before this script.');
@@ -365,28 +433,25 @@ async function initWebXR() {
         // We'll request the reference space after session starts.
         //
         // IMPORTANT (UI VISIBILITY):
-        // - On Android/Chrome we want DOM overlay so buttons + toasts stay visible.
-        // - On iOS/Variant Launch we avoid DOM overlay to prevent black-screen bugs.
+        // - Always attempt DOM overlay for both iOS and Android to keep HTML UI visible.
+        // - Use dedicated overlay root (#xr-overlay) instead of document.body.
+        // - If dom-overlay fails, retry without it (fallback ensures AR still works).
         //
         // Base options used everywhere
         const baseSessionOptions = {
             requiredFeatures: [], // Explicitly set to empty array to prevent SDK errors
-            optionalFeatures: ['local', 'local-floor', 'hit-test']
+            optionalFeatures: ['local', 'local-floor', 'hit-test', 'dom-overlay']
         };
         
-        // Android/non‑iOS: try DOM overlay first so HTML UI (reset button, toasts)
-        // remains visible on top of the camera feed.
-        let sessionOptionsToUse = baseSessionOptions;
-        let triedDomOverlay = false;
+        // Always attempt DOM overlay for both iOS and Android
+        // Use the dedicated overlay root element
+        const platformName = platform.isIOS ? 'iOS' : platform.isAndroid ? 'Android' : 'Other';
+        console.log(`Requesting session with dom-overlay (platform: ${platformName})`);
         
-        if (!platform.isIOS) {
-            triedDomOverlay = true;
-            sessionOptionsToUse = {
-                ...baseSessionOptions,
-                optionalFeatures: [...baseSessionOptions.optionalFeatures, 'dom-overlay'],
-                domOverlay: { root: document.body }
-            };
-        }
+        let sessionOptionsToUse = {
+            ...baseSessionOptions,
+            domOverlay: { root: overlayRoot }
+        };
         
         // Ensure the options object is properly structured and not null/undefined
         if (!sessionOptionsToUse || typeof sessionOptionsToUse !== 'object') {
@@ -396,20 +461,40 @@ async function initWebXR() {
         console.log('Requesting session with options:', sessionOptionsToUse);
         
         // Wrap in try-catch to provide better error messages
+        let triedDomOverlay = true;
         try {
             xrSession = await navigator.xr.requestSession('immersive-ar', sessionOptionsToUse);
+            
+            // Check if dom-overlay is actually active
+            if (xrSession.enabledFeatures && xrSession.enabledFeatures.includes('dom-overlay')) {
+                console.log('DOM overlay active; HTML UI should be visible');
+            } else {
+                console.log('DOM overlay requested but not enabled in session');
+            }
         } catch (sessionError) {
             // If dom-overlay caused the failure, retry once without it
             if (
                 triedDomOverlay &&
-                !platform.isIOS &&
                 (sessionError.name === 'NotSupportedError' ||
-                 (sessionError.message && sessionError.message.includes('dom-overlay')))
+                 (sessionError.message && sessionError.message.includes('dom-overlay')) ||
+                 (sessionError.message && sessionError.message.includes('domOverlay')))
             ) {
-                console.warn('DOM overlay not supported, retrying session without it...');
-                const fallbackOptions = baseSessionOptions;
+                console.warn('DOM overlay failed, retrying without dom-overlay');
+                const fallbackOptions = {
+                    ...baseSessionOptions,
+                    optionalFeatures: baseSessionOptions.optionalFeatures.filter(f => f !== 'dom-overlay')
+                };
                 console.log('Retrying session with options:', fallbackOptions);
-                xrSession = await navigator.xr.requestSession('immersive-ar', fallbackOptions);
+                try {
+                    xrSession = await navigator.xr.requestSession('immersive-ar', fallbackOptions);
+                    console.warn('Session started without DOM overlay - HTML UI may not be visible in AR');
+                    if (window.Toast) {
+                        window.Toast.warning('DOM overlay not available. UI buttons may not appear in AR view.', 'Limited UI', 5000);
+                    }
+                } catch (fallbackError) {
+                    // Fallback also failed, throw original error
+                    throw sessionError;
+                }
             } else {
                 // Provide more detailed error information
                 console.error('Session request failed:', sessionError);
@@ -436,6 +521,54 @@ async function initWebXR() {
         
         if (window.Toast) {
             window.Toast.success('WebXR session started!', 'Session Active', 3000);
+        }
+        
+        // Prevent overlay taps from triggering XR select events
+        if (overlayRoot) {
+            // Add beforexrselect listener to prevent XR select on overlay
+            overlayRoot.addEventListener('beforexrselect', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            });
+            
+            // Also prevent on the UI container
+            if (overlayUI) {
+                overlayUI.addEventListener('beforexrselect', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            }
+            
+            // Add click/touch handlers to buttons to stop propagation
+            const resetButton = document.getElementById('reset-button');
+            if (resetButton) {
+                const stopPropagation = (e) => {
+                    e.stopPropagation();
+                };
+                resetButton.addEventListener('click', stopPropagation);
+                resetButton.addEventListener('touchstart', stopPropagation);
+                resetButton.addEventListener('pointerdown', stopPropagation);
+            }
+            
+            // Handle any close button if it exists
+            const closeButton = document.getElementById('close-button');
+            if (closeButton) {
+                const stopPropagation = (e) => {
+                    e.stopPropagation();
+                };
+                closeButton.addEventListener('click', stopPropagation);
+                closeButton.addEventListener('touchstart', stopPropagation);
+                closeButton.addEventListener('pointerdown', stopPropagation);
+                
+                // Ensure close button ends session
+                closeButton.addEventListener('click', () => {
+                    if (xrSession) {
+                        xrSession.end();
+                    }
+                });
+            }
+            
+            console.log('Overlay event handlers attached to prevent XR select');
         }
         
         // CRITICAL for iOS: Ensure canvas is still visible before connecting renderer
