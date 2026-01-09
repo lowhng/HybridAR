@@ -1172,5 +1172,3 @@ if (typeof window !== 'undefined') {
         _loadTime: Date.now()
     };
 }
-
-
