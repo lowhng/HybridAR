@@ -325,17 +325,19 @@ async function initWebXR() {
     scene.add(reticle);
 
     // Add lighting - increased intensity to address darkness
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0); // Increased from 0.7 to 1.0
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1); // Increased from 0.7 to 1.0
     scene.add(ambientLight);
     
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2); // Increased from 0.8 to 1.2
     directionalLight.position.set(5, 10, 5);
     scene.add(directionalLight);
+    directionalLight.castShadow = false; // shadows often darken AR scenes
     
     // Add additional fill light to reduce darkness
     const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
     fillLight.position.set(-5, 5, -5);
     scene.add(fillLight);
+    
 
     // Start WebXR session
     try {
@@ -647,7 +649,7 @@ async function createContentForSurface(surfaceType) {
             const maxDimension = Math.max(size.x, size.y, size.z);
             if (maxDimension > 0) {
                 const targetSize = 0.3; // Target 30cm for largest dimension
-                const scaleFactor = targetSize / maxDimension;
+                const scaleFactor = (targetSize / maxDimension) * 0.7; // Scale down to 0.7x size
                 wireModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
                 console.log(`Auto-scaled model by factor: ${scaleFactor.toFixed(2)}`);
             } else {
