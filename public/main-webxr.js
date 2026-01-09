@@ -127,7 +127,6 @@ let reticleFloorGeometry; // Ring geometry for floor
 let reticleWallGeometry; // Crosshair geometry for wall
 let reticleMaterial; // Material that changes color
 let animationTime = 0;
-let debugPlane = null; // Debug visualization of detected plane
 
 // ============================================================================
 // DOM ELEMENTS
@@ -595,7 +594,6 @@ async function createContentForSurface(surfaceType) {
     
     cubeMesh = null;
     wireModel = null;
-    debugPlane = null; // Reset debug plane reference
     placedSurfaceType = surfaceType;
     
     if (surfaceType === 'wall') {
@@ -633,41 +631,31 @@ async function createContentForSurface(surfaceType) {
                 throw new Error('gltf.scene is null or undefined');
             }
             
-            // Reset position, rotation, and scale FIRST before calculating bounding box
-            // This ensures we get accurate measurements
-            wireModel.position.set(0, 0, 0);
-            wireModel.rotation.set(0, 0, 0);
-            wireModel.quaternion.set(0, 0, 0, 1);
-            wireModel.scale.set(1, 1, 1);
-            
-            // Update matrix to ensure transforms are applied
-            wireModel.updateMatrixWorld(true);
-            
-            // Calculate bounding box AFTER resetting transforms
+            // Calculate bounding box to understand model size
             const box = new THREE.Box3().setFromObject(wireModel);
             const size = box.getSize(new THREE.Vector3());
             const center = box.getCenter(new THREE.Vector3());
-            console.log('Model bounding box size (after reset):', size);
-            console.log('Model center (after reset):', center);
+            console.log('Model bounding box size:', size);
+            console.log('Model center:', center);
             
-            // Auto-scale model with UNIFORM scaling to prevent squishing
-            // Use the largest dimension to determine scale
-            const maxDimension = Math.max(Math.abs(size.x), Math.abs(size.y), Math.abs(size.z));
+            // Reset position and scale for fresh spawn
+            // Don't reset rotation - preserve model's original rotation from GLB file
+            wireModel.position.set(0, 0, 0);
+            wireModel.scale.set(1, 1, 1);
+            
+            // Auto-scale model - similar to bouncing-band's approach
+            const maxDimension = Math.max(size.x, size.y, size.z);
             if (maxDimension > 0) {
                 const targetSize = 0.3; // Target 30cm for largest dimension
                 const scaleFactor = targetSize / maxDimension;
-                // CRITICAL: Use uniform scaling to prevent pancake effect
                 wireModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
-                console.log(`Auto-scaled model uniformly by factor: ${scaleFactor.toFixed(4)}`);
-                console.log(`Scaled size: (${(size.x * scaleFactor).toFixed(3)}, ${(size.y * scaleFactor).toFixed(3)}, ${(size.z * scaleFactor).toFixed(3)})`);
+                console.log(`Auto-scaled model by factor: ${scaleFactor.toFixed(2)}`);
             } else {
-                console.warn('Model has zero or invalid dimensions, using default scale');
                 wireModel.scale.set(1, 1, 1);
             }
             
-            // Center the model at origin (accounting for scale)
-            const scaledCenter = center.clone().multiplyScalar(wireModel.scale.x);
-            wireModel.position.sub(scaledCenter);
+            // Center the model
+            wireModel.position.sub(center.multiplyScalar(wireModel.scale.x));
             
             // Make sure model is visible
             wireModel.visible = true;
@@ -703,79 +691,6 @@ async function createContentForSurface(surfaceType) {
             window.Toast.success('Floor cube placed!', 'Success', 2000);
         }
     }
-}
-
-/**
- * Creates or updates a debug plane visualization showing the detected surface
- * @param {THREE.Matrix4} planeMatrix - The matrix representing the plane orientation
- * @param {string} surfaceType - 'wall' or 'floor'
- */
-function createDebugPlane(planeMatrix, surfaceType) {
-    // Remove existing debug plane if it exists
-    if (debugPlane) {
-        contentGroup.remove(debugPlane);
-        // Clean up geometries and materials from the group
-        debugPlane.traverse((child) => {
-            if (child.geometry) child.geometry.dispose();
-            if (child.material) {
-                if (Array.isArray(child.material)) {
-                    child.material.forEach(mat => mat.dispose());
-                } else {
-                    child.material.dispose();
-                }
-            }
-        });
-        debugPlane = null;
-    }
-    
-    // Create a flat square plane (0.5m x 0.5m) to visualize the detected surface
-    const planeSize = 0.5;
-    const planeGeometry = new THREE.PlaneGeometry(planeSize, planeSize);
-    
-    // Use semi-transparent material with different colors for wall vs floor
-    const planeColor = surfaceType === 'wall' ? 0xff6b35 : 0x00ffff; // Orange for wall, Cyan for floor
-    const planeMaterial = new THREE.MeshBasicMaterial({
-        color: planeColor,
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.3,
-        wireframe: false
-    });
-    
-    debugPlane = new THREE.Mesh(planeGeometry, planeMaterial);
-    
-    // Position at origin (relative to contentGroup)
-    debugPlane.position.set(0, 0, 0);
-    
-    // The debug plane should have identity rotation relative to contentGroup
-    // because contentGroup will be rotated to the correct orientation
-    // This way, the debug plane will show the correct plane orientation
-    debugPlane.quaternion.set(0, 0, 0, 1);
-    
-    // Add wireframe outline for better visibility
-    const wireframeGeometry = new THREE.PlaneGeometry(planeSize, planeSize);
-    const wireframeMaterial = new THREE.MeshBasicMaterial({
-        color: planeColor,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.8
-    });
-    const wireframe = new THREE.Mesh(wireframeGeometry, wireframeMaterial);
-    wireframe.position.set(0, 0, 0);
-    wireframe.quaternion.set(0, 0, 0, 1); // Identity - will inherit from contentGroup
-    
-    // Add both to a group so we can manage them together
-    const planeGroup = new THREE.Group();
-    planeGroup.add(debugPlane);
-    planeGroup.add(wireframe);
-    
-    // Add to contentGroup - it will be positioned and rotated with contentGroup
-    // This allows us to see both the detected plane and the model's orientation
-    contentGroup.add(planeGroup);
-    debugPlane = planeGroup; // Store the group as debugPlane
-    
-    console.log('Debug plane created for', surfaceType, 'surface');
-    console.log('Debug plane will show detected plane orientation');
 }
 
 /**
@@ -871,103 +786,17 @@ function setupTapToPlace() {
             contentGroup.quaternion.set(0, 0, 0, 1); // Reset quaternion to identity
             contentGroup.matrix.identity();
             
-            // Set position from reticle
+            // CRITICAL: Copy the reticle's matrix directly to ensure perfect alignment
+            // The reticle is already correctly oriented with the detected surface
+            contentGroup.matrix.copy(reticle.matrix);
+            
+            // Extract position and rotation from the matrix
             contentGroup.position.setFromMatrixPosition(reticle.matrix);
             
-            // Create debug plane visualization FIRST (before applying rotation)
-            // This helps visualize where the detected plane is
-            createDebugPlane(reticle.matrix, currentSurfaceType);
-            
-            // For walls: Make model face outward from wall (like a picture hanging on wall)
-            // The reticle matrix represents the plane coordinate system, but we need to
-            // correct it to ensure the wall is properly vertical
-            if (currentSurfaceType === 'wall') {
-                // Extract normal from reticle matrix (this should point outward from wall)
-                const wallNormal = new THREE.Vector3();
-                wallNormal.setFromMatrixColumn(reticle.matrix, 2).normalize();
-                
-                // For a vertical wall, force the up vector to be world up (0, 1, 0)
-                const worldUp = new THREE.Vector3(0, 1, 0);
-                
-                // Calculate the right vector: right = up × normal (in right-handed system)
-                // This ensures the plane is vertical with up pointing up
-                const wallRight = new THREE.Vector3();
-                wallRight.crossVectors(worldUp, wallNormal).normalize();
-                
-                // If the cross product is zero or very small (normal is nearly vertical),
-                // use a default horizontal direction
-                if (wallRight.length() < 0.1) {
-                    // Normal is nearly vertical, use a default right vector
-                    wallRight.set(1, 0, 0);
-                    // Recalculate normal to be horizontal
-                    wallNormal.crossVectors(wallRight, worldUp).normalize();
-                }
-                
-                // For a photo frame on a wall, we want:
-                // - Model's local X (right) = wall's right (horizontal along wall)
-                // - Model's local Y (up) = world up (vertical)
-                // - Model's local -Z (forward in Three.js) = wall's normal (outward)
-                //   This means model's Z should point opposite to wall normal
-                //
-                // Create rotation matrix using makeBasis:
-                // makeBasis(x, y, z) sets the matrix columns to x, y, z
-                // So we want: X=wallRight, Y=worldUp, Z=-wallNormal
-                const wallNormalNegated = wallNormal.clone().negate();
-                const rotationMatrix = new THREE.Matrix4();
-                rotationMatrix.makeBasis(wallRight, worldUp, wallNormalNegated);
-                
-                // Extract quaternion from rotation matrix
-                const wallQuaternion = new THREE.Quaternion();
-                wallQuaternion.setFromRotationMatrix(rotationMatrix);
-                
-                // Apply the corrected wall orientation
-                contentGroup.quaternion.copy(wallQuaternion);
-                
-                // Debug: Log orientation vectors
-                console.log('=== WALL ORIENTATION DEBUG (CORRECTED) ===');
-                console.log('Wall right (X, horizontal):', 
-                    `(${wallRight.x.toFixed(3)}, ${wallRight.y.toFixed(3)}, ${wallRight.z.toFixed(3)})`);
-                console.log('Wall up (Y, world up):', 
-                    `(${worldUp.x.toFixed(3)}, ${worldUp.y.toFixed(3)}, ${worldUp.z.toFixed(3)})`);
-                console.log('Wall normal (Z, outward):', 
-                    `(${wallNormal.x.toFixed(3)}, ${wallNormal.y.toFixed(3)}, ${wallNormal.z.toFixed(3)})`);
-                console.log('Model Z-axis (should be -normal):', 
-                    `(${wallNormalNegated.x.toFixed(3)}, ${wallNormalNegated.y.toFixed(3)}, ${wallNormalNegated.z.toFixed(3)})`);
-            } else {
-                // For floors, use the reticle's rotation directly
-                const reticleQuaternion = new THREE.Quaternion();
-                reticleQuaternion.setFromRotationMatrix(reticle.matrix);
-                contentGroup.quaternion.copy(reticleQuaternion);
-            }
-            
-            // Adjust debug plane orientation to align with contentGroup
-            // For walls, both use the corrected orientation, so they should already match
-            // For floors, both use the reticle matrix, so they should also match
-            // But we need to ensure the debug plane is relative to contentGroup's rotation
-            if (debugPlane) {
-                if (currentSurfaceType === 'wall') {
-                    // For walls, both debug plane and contentGroup use corrected orientation
-                    // The debug plane was created with corrected orientation, and contentGroup
-                    // now also uses corrected orientation, so they should align
-                    // Reset debug plane to identity (relative to contentGroup) since
-                    // contentGroup already has the correct rotation
-                    debugPlane.quaternion.set(0, 0, 0, 1);
-                    
-                    // Also update wireframe if it exists
-                    if (debugPlane.children && debugPlane.children.length > 1) {
-                        debugPlane.children[1].quaternion.set(0, 0, 0, 1);
-                    }
-                } else {
-                    // For floors, both use reticle matrix directly, so they should align
-                    // Reset to identity relative to contentGroup
-                    debugPlane.quaternion.set(0, 0, 0, 1);
-                    
-                    // Also update wireframe if it exists
-                    if (debugPlane.children && debugPlane.children.length > 1) {
-                        debugPlane.children[1].quaternion.set(0, 0, 0, 1);
-                    }
-                }
-            }
+            // Extract quaternion from reticle matrix to ensure exact same orientation
+            const reticleQuaternion = new THREE.Quaternion();
+            reticleQuaternion.setFromRotationMatrix(reticle.matrix);
+            contentGroup.quaternion.copy(reticleQuaternion);
             
             contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
@@ -1298,7 +1127,6 @@ function resetAnchor() {
     // Reset references
     cubeMesh = null;
     wireModel = null;
-    debugPlane = null;
     
     // Reset reticle state properly
     if (xrHitTestSource) {
