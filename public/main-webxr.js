@@ -113,6 +113,7 @@ let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
+let currentModelType = null; // 'wire-model', 'green-cube', etc.
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -127,6 +128,16 @@ let reticleFloorGeometry; // Ring geometry for floor
 let reticleWallGeometry; // Crosshair geometry for wall
 let reticleMaterial; // Material that changes color
 let animationTime = 0;
+
+// ============================================================================
+// GAZE DETECTION STATE
+// ============================================================================
+let gazeTimer = 0; // Time in milliseconds user has been looking at model
+let isGazingAtModel = false;
+let lastGazeCheckTime = 0;
+const GAZE_THRESHOLD_MS = 2000; // 2 seconds
+const GAZE_ANGLE_THRESHOLD = Math.PI / 6; // 30 degrees (in radians)
+let raycaster = null; // Will be initialized after THREE is available
 
 // ============================================================================
 // DOM ELEMENTS
@@ -731,6 +742,9 @@ async function createContentForSurface(surfaceType) {
     wireModel = null;
     placedSurfaceType = surfaceType;
     
+    // Track model type for quiz system
+    currentModelType = surfaceType === 'wall' ? 'wire-model' : 'green-cube';
+    
     if (surfaceType === 'wall') {
         // Load wire.glb for walls - using bouncing-band pattern
         console.log('Loading wire.glb for wall surface...');
@@ -1207,6 +1221,11 @@ function onXRFrame(timestamp, frame) {
     
     // Wire model stays static (no rotation)
 
+    // Update gaze detection
+    if (isAnchored) {
+        updateGazeDetection(frame, timestamp);
+    }
+
     // Render - Three.js WebXRManager handles camera automatically
     renderer.render(scene, camera);
 }
@@ -1219,6 +1238,185 @@ function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+// ============================================================================
+// GAZE DETECTION
+// ============================================================================
+
+/**
+ * Checks if the user is looking at the 3D model
+ * Uses raycasting from camera center with angle threshold
+ * @param {XRFrame} frame - Current XR frame
+ * @returns {boolean} True if user is gazing at the model
+ */
+function checkGazeAtModel(frame) {
+    if (!isAnchored || !contentGroup || !contentGroup.visible) {
+        return false;
+    }
+
+    if (!frame || !xrReferenceSpace) {
+        return false;
+    }
+
+    try {
+        const pose = frame.getViewerPose(xrReferenceSpace);
+        if (!pose || !pose.views || pose.views.length === 0) {
+            return false;
+        }
+
+        const view = pose.views[0];
+        const viewMatrix = new THREE.Matrix4().fromArray(view.transform.matrix);
+        
+        // Get camera position and forward direction
+        const cameraPosition = new THREE.Vector3();
+        const cameraForward = new THREE.Vector3(0, 0, -1);
+        cameraPosition.setFromMatrixPosition(viewMatrix);
+        cameraForward.applyMatrix4(viewMatrix);
+        cameraForward.sub(cameraPosition).normalize();
+
+        // Get model center position in world space
+        contentGroup.updateMatrixWorld(true);
+        const modelCenter = new THREE.Vector3();
+        contentGroup.getWorldPosition(modelCenter);
+
+        // Calculate direction from camera to model
+        const toModel = new THREE.Vector3();
+        toModel.subVectors(modelCenter, cameraPosition);
+        const distance = toModel.length();
+        
+        // Check if model is too far (optional - can adjust threshold)
+        if (distance > 5.0) {
+            return false;
+        }
+        
+        toModel.normalize();
+
+        // Calculate angle between camera forward and direction to model
+        const angle = Math.acos(THREE.MathUtils.clamp(cameraForward.dot(toModel), -1, 1));
+
+        // Check if model is within angle threshold
+        if (angle > GAZE_ANGLE_THRESHOLD) {
+            return false;
+        }
+
+        // Check if model is in front of camera (not behind)
+        if (cameraForward.dot(toModel) < 0) {
+            return false;
+        }
+
+        // Initialize raycaster if needed
+        if (!raycaster && typeof THREE !== 'undefined') {
+            raycaster = new THREE.Raycaster();
+        }
+
+        if (raycaster) {
+            // Perform raycast to check if model is actually visible (not occluded)
+            raycaster.set(cameraPosition, toModel);
+            const intersects = raycaster.intersectObject(contentGroup, true);
+            
+            // If raycast hits the model, user is looking at it
+            return intersects.length > 0;
+        }
+
+        // Fallback: if raycaster not available, just check angle
+        return true;
+    } catch (error) {
+        console.warn('Gaze detection error:', error);
+        return false;
+    }
+}
+
+/**
+ * Updates gaze timer and button visibility
+ * @param {XRFrame} frame - Current XR frame
+ * @param {number} timestamp - Current timestamp
+ */
+function updateGazeDetection(frame, timestamp) {
+    if (!isAnchored || !currentModelType) {
+        // Reset gaze if no model is placed
+        gazeTimer = 0;
+        isGazingAtModel = false;
+        hideQuizButton();
+        return;
+    }
+
+    const deltaTime = lastGazeCheckTime > 0 ? timestamp - lastGazeCheckTime : 16; // ~60fps default
+    lastGazeCheckTime = timestamp;
+
+    const isGazing = checkGazeAtModel(frame);
+
+    if (isGazing) {
+        if (!isGazingAtModel) {
+            // Just started gazing
+            isGazingAtModel = true;
+            gazeTimer = 0;
+        }
+        gazeTimer += deltaTime;
+
+        // Show button after threshold
+        if (gazeTimer >= GAZE_THRESHOLD_MS) {
+            showQuizButton();
+        }
+    } else {
+        // Not gazing - reset timer
+        if (isGazingAtModel) {
+            isGazingAtModel = false;
+            gazeTimer = 0;
+            hideQuizButton();
+        }
+    }
+}
+
+/**
+ * Shows the quiz button
+ */
+function showQuizButton() {
+    const quizButton = document.getElementById('quiz-button');
+    if (quizButton) {
+        quizButton.classList.remove('hidden');
+    }
+}
+
+/**
+ * Hides the quiz button
+ */
+function hideQuizButton() {
+    const quizButton = document.getElementById('quiz-button');
+    if (quizButton) {
+        quizButton.classList.add('hidden');
+    }
+}
+
+/**
+ * Exits AR and shows quiz view
+ */
+function exitARToQuiz() {
+    if (!currentModelType) {
+        console.warn('No model type available for quiz');
+        return;
+    }
+
+    // Hide quiz button
+    hideQuizButton();
+
+    // End XR session
+    if (xrSession) {
+        xrSession.end();
+        xrSession = null;
+    }
+
+    // Stop render loop
+    if (renderer && renderer.setAnimationLoop) {
+        renderer.setAnimationLoop(null);
+    }
+
+    // Show quiz view
+    if (window.QuizSystem && window.QuizSystem.showQuiz) {
+        window.QuizSystem.showQuiz(currentModelType);
+    } else {
+        console.error('QuizSystem not available');
+    }
 }
 
 // ============================================================================
@@ -1274,6 +1472,12 @@ function resetAnchor() {
     // Reset references
     cubeMesh = null;
     wireModel = null;
+    currentModelType = null;
+    
+    // Reset gaze detection
+    gazeTimer = 0;
+    isGazingAtModel = false;
+    hideQuizButton();
     
     // Reset reticle state properly
     if (xrHitTestSource) {
@@ -1302,8 +1506,36 @@ if (typeof window !== 'undefined') {
         init: initWebXR,
         reset: resetAnchor,
         isAnchored: () => isAnchored,
+        exitToQuiz: exitARToQuiz,
+        getCurrentModelType: () => currentModelType,
         _scriptLoaded: true,
         _loaded: true,
         _loadTime: Date.now()
     };
+}
+
+// Attach quiz button click handler
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            const quizButton = document.getElementById('quiz-button');
+            if (quizButton) {
+                quizButton.addEventListener('click', () => {
+                    if (window.WebXRAR && window.WebXRAR.exitToQuiz) {
+                        window.WebXRAR.exitToQuiz();
+                    }
+                });
+            }
+        });
+    } else {
+        const quizButton = document.getElementById('quiz-button');
+        if (quizButton) {
+            quizButton.addEventListener('click', () => {
+                if (window.WebXRAR && window.WebXRAR.exitToQuiz) {
+                    window.WebXRAR.exitToQuiz();
+                }
+            });
+        }
+    }
 }

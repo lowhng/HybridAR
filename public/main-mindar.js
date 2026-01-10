@@ -20,6 +20,7 @@ let isTracking = false;           // Whether image target is currently detected
 let lastKnownPosition = null;     // Stores last known world position when target is lost
 let lastKnownQuaternion = null;  // Stores last known rotation
 let lastKnownScale = null;        // Stores last known scale
+let currentModelType = null;      // 'mindar-cube' for MindAR
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -29,6 +30,16 @@ let anchorGroup;      // Attached to MindAR's image target anchor (updates with 
 let contentGroup;     // Contains the 3D cube
 let cubeMesh;         // The actual 3D cube mesh
 let anchor;           // MindAR anchor reference
+
+// ============================================================================
+// GAZE DETECTION STATE
+// ============================================================================
+let gazeTimer = 0; // Time in milliseconds user has been looking at model
+let isGazingAtModel = false;
+let lastGazeCheckTime = 0;
+const GAZE_THRESHOLD_MS = 2000; // 2 seconds
+const GAZE_ANGLE_THRESHOLD = Math.PI / 6; // 30 degrees (in radians)
+let raycaster = null; // Will be initialized after THREE is available
 
 // ============================================================================
 // MINDAR CONTROLLER
@@ -238,6 +249,9 @@ async function initMindAR() {
     contentGroup.add(cubeMesh);
     contentGroup.add(wireframeMesh);
     anchorGroup.add(contentGroup);
+    
+    // Track model type for quiz system
+    currentModelType = 'mindar-cube';
 
     // ============================================================================
     // LIGHTING
@@ -328,7 +342,12 @@ async function initMindAR() {
     }
     
     let animationTime = 0;
-    renderer.setAnimationLoop(() => {
+    let lastGazeCheckTimestamp = 0;
+    renderer.setAnimationLoop((timestamp) => {
+        const currentTime = timestamp || performance.now();
+        const deltaTime = lastGazeCheckTimestamp > 0 ? currentTime - lastGazeCheckTimestamp : 16; // Default to ~60fps
+        lastGazeCheckTimestamp = currentTime;
+        
         animationTime += 0.01;
         
         // Rotate the cube
@@ -359,6 +378,16 @@ async function initMindAR() {
             lastKnownScale = null;
         }
         
+        // Update gaze detection
+        if (isTracking && currentModelType) {
+            updateGazeDetectionMindAR(deltaTime, currentTime);
+        } else {
+            // Reset gaze if not tracking
+            gazeTimer = 0;
+            isGazingAtModel = false;
+            hideQuizButton();
+        }
+        
         renderer.render(scene, camera);
     });
     
@@ -372,6 +401,170 @@ async function initMindAR() {
 }
 
 // ============================================================================
+// GAZE DETECTION
+// ============================================================================
+
+/**
+ * Checks if the user is looking at the 3D model (MindAR version)
+ * Uses camera position and model position with angle threshold
+ * @param {number} deltaTime - Time since last frame in milliseconds
+ * @param {number} timestamp - Current timestamp
+ */
+function updateGazeDetectionMindAR(deltaTime, timestamp) {
+    if (!isTracking || !contentGroup || !contentGroup.visible || !currentModelType) {
+        gazeTimer = 0;
+        isGazingAtModel = false;
+        hideQuizButton();
+        return;
+    }
+
+    try {
+        // Get camera position and forward direction
+        camera.updateMatrixWorld(true);
+        const cameraPosition = new THREE.Vector3();
+        const cameraForward = new THREE.Vector3(0, 0, -1);
+        camera.getWorldPosition(cameraPosition);
+        cameraForward.applyMatrix4(camera.matrixWorld);
+        cameraForward.sub(cameraPosition).normalize();
+
+        // Get model center position in world space
+        contentGroup.updateMatrixWorld(true);
+        const modelCenter = new THREE.Vector3();
+        contentGroup.getWorldPosition(modelCenter);
+
+        // Calculate direction from camera to model
+        const toModel = new THREE.Vector3();
+        toModel.subVectors(modelCenter, cameraPosition);
+        const distance = toModel.length();
+        
+        // Check if model is too far (optional - can adjust threshold)
+        if (distance > 5.0) {
+            isGazingAtModel = false;
+            gazeTimer = 0;
+            hideQuizButton();
+            return;
+        }
+        
+        toModel.normalize();
+
+        // Calculate angle between camera forward and direction to model
+        const angle = Math.acos(THREE.MathUtils.clamp(cameraForward.dot(toModel), -1, 1));
+
+        // Check if model is within angle threshold
+        if (angle > GAZE_ANGLE_THRESHOLD) {
+            isGazingAtModel = false;
+            gazeTimer = 0;
+            hideQuizButton();
+            return;
+        }
+
+        // Check if model is in front of camera (not behind)
+        if (cameraForward.dot(toModel) < 0) {
+            isGazingAtModel = false;
+            gazeTimer = 0;
+            hideQuizButton();
+            return;
+        }
+
+        // Initialize raycaster if needed
+        if (!raycaster && typeof THREE !== 'undefined') {
+            raycaster = new THREE.Raycaster();
+        }
+
+        let isGazing = false;
+        if (raycaster) {
+            // Perform raycast to check if model is actually visible (not occluded)
+            raycaster.set(cameraPosition, toModel);
+            const intersects = raycaster.intersectObject(contentGroup, true);
+            isGazing = intersects.length > 0;
+        } else {
+            // Fallback: if raycaster not available, just check angle
+            isGazing = true;
+        }
+
+        if (isGazing) {
+            if (!isGazingAtModel) {
+                // Just started gazing
+                isGazingAtModel = true;
+                gazeTimer = 0;
+            }
+            gazeTimer += deltaTime;
+
+            // Show button after threshold
+            if (gazeTimer >= GAZE_THRESHOLD_MS) {
+                showQuizButton();
+            }
+        } else {
+            // Not gazing - reset timer
+            if (isGazingAtModel) {
+                isGazingAtModel = false;
+                gazeTimer = 0;
+                hideQuizButton();
+            }
+        }
+    } catch (error) {
+        console.warn('Gaze detection error:', error);
+        isGazingAtModel = false;
+        gazeTimer = 0;
+        hideQuizButton();
+    }
+}
+
+/**
+ * Shows the quiz button
+ */
+function showQuizButton() {
+    const quizButton = document.getElementById('quiz-button');
+    if (quizButton) {
+        quizButton.classList.remove('hidden');
+    }
+}
+
+/**
+ * Hides the quiz button
+ */
+function hideQuizButton() {
+    const quizButton = document.getElementById('quiz-button');
+    if (quizButton) {
+        quizButton.classList.add('hidden');
+    }
+}
+
+/**
+ * Exits AR and shows quiz view
+ */
+function exitARToQuizMindAR() {
+    if (!currentModelType) {
+        console.warn('No model type available for quiz');
+        return;
+    }
+
+    // Hide quiz button
+    hideQuizButton();
+
+    // Stop MindAR session
+    if (mindarThree) {
+        try {
+            mindarThree.stop();
+        } catch (error) {
+            console.warn('Error stopping MindAR:', error);
+        }
+    }
+
+    // Stop render loop
+    if (renderer && renderer.setAnimationLoop) {
+        renderer.setAnimationLoop(null);
+    }
+
+    // Show quiz view
+    if (window.QuizSystem && window.QuizSystem.showQuiz) {
+        window.QuizSystem.showQuiz(currentModelType);
+    } else {
+        console.error('QuizSystem not available');
+    }
+}
+
+// ============================================================================
 // UPDATE EXPORTS WITH ACTUAL FUNCTIONS
 // ============================================================================
 
@@ -379,7 +572,39 @@ window.MindARAR.init = initMindAR;
 window.MindARAR.reset = () => {
     // Reset not needed for MindAR - it always tracks when target is visible
     console.log('Reset not applicable for MindAR - always tracking when target visible');
+    // Reset gaze detection
+    gazeTimer = 0;
+    isGazingAtModel = false;
+    hideQuizButton();
 };
+window.MindARAR.exitToQuiz = exitARToQuizMindAR;
+window.MindARAR.getCurrentModelType = () => currentModelType;
+
+// Attach quiz button click handler
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    // Wait for DOM to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            const quizButton = document.getElementById('quiz-button');
+            if (quizButton) {
+                quizButton.addEventListener('click', () => {
+                    if (window.MindARAR && window.MindARAR.exitToQuiz) {
+                        window.MindARAR.exitToQuiz();
+                    }
+                });
+            }
+        });
+    } else {
+        const quizButton = document.getElementById('quiz-button');
+        if (quizButton) {
+            quizButton.addEventListener('click', () => {
+                if (window.MindARAR && window.MindARAR.exitToQuiz) {
+                    window.MindARAR.exitToQuiz();
+                }
+            });
+        }
+    }
+}
 
 })(); // End IIFE - isolates scope to prevent conflicts
 
