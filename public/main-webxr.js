@@ -202,6 +202,13 @@ function ensureOverlayRoot() {
         console.log('Reset button moved into overlay UI');
     }
     
+    // Move quiz button into overlay UI if it exists and isn't already there
+    const quizButton = document.getElementById('quiz-button');
+    if (quizButton && quizButton.parentElement !== overlayUI) {
+        overlayUI.appendChild(quizButton);
+        console.log('Quiz button moved into overlay UI');
+    }
+    
     // Ensure toast container is accessible (can be sibling or inside overlay)
     const toastContainer = document.getElementById('toast-container');
     if (toastContainer && !overlayRoot.contains(toastContainer)) {
@@ -559,6 +566,25 @@ async function initWebXR() {
                 resetButton.addEventListener('click', stopPropagation);
                 resetButton.addEventListener('touchstart', stopPropagation);
                 resetButton.addEventListener('pointerdown', stopPropagation);
+            }
+            
+            // Add click/touch handlers to quiz button to stop propagation and handle click
+            const quizButton = document.getElementById('quiz-button');
+            if (quizButton) {
+                const stopPropagation = (e) => {
+                    e.stopPropagation();
+                };
+                quizButton.addEventListener('click', stopPropagation);
+                quizButton.addEventListener('touchstart', stopPropagation);
+                quizButton.addEventListener('pointerdown', stopPropagation);
+                
+                // Add click handler for quiz button
+                quizButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (window.WebXRAR && window.WebXRAR.exitToQuiz) {
+                        window.WebXRAR.exitToQuiz();
+                    }
+                });
             }
             
             // Handle any close button if it exists
@@ -1374,6 +1400,11 @@ function updateGazeDetection(frame, timestamp) {
 function showQuizButton() {
     const quizButton = document.getElementById('quiz-button');
     if (quizButton) {
+        // Ensure button is in overlay UI for iOS WebXR
+        if (overlayUI && quizButton.parentElement !== overlayUI) {
+            overlayUI.appendChild(quizButton);
+            console.log('Quiz button moved to overlay UI');
+        }
         quizButton.classList.remove('hidden');
     }
 }
@@ -1514,28 +1545,5 @@ if (typeof window !== 'undefined') {
     };
 }
 
-// Attach quiz button click handler
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    // Wait for DOM to be ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            const quizButton = document.getElementById('quiz-button');
-            if (quizButton) {
-                quizButton.addEventListener('click', () => {
-                    if (window.WebXRAR && window.WebXRAR.exitToQuiz) {
-                        window.WebXRAR.exitToQuiz();
-                    }
-                });
-            }
-        });
-    } else {
-        const quizButton = document.getElementById('quiz-button');
-        if (quizButton) {
-            quizButton.addEventListener('click', () => {
-                if (window.WebXRAR && window.WebXRAR.exitToQuiz) {
-                    window.WebXRAR.exitToQuiz();
-                }
-            });
-        }
-    }
-}
+// Quiz button click handler will be set up after overlay is created
+// The handler is attached in the ensureOverlayRoot section where other button handlers are set up
