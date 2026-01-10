@@ -113,7 +113,7 @@ let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
-let currentModelType = null; // 'wire-model', 'green-cube', etc.
+let currentModelType = null; // 'wire-model', 'puddle-model', etc.
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -122,6 +122,7 @@ let scene, camera, renderer;
 let contentGroup;
 let cubeMesh;
 let wireModel = null; // Wire.glb model
+let puddleModel = null; // Puddle.glb model
 let placedSurfaceType = null; // 'wall' or 'floor' - surface type when content was placed
 let reticle; // Visual indicator for placement
 let reticleFloorGeometry; // Ring geometry for floor
@@ -766,10 +767,11 @@ async function createContentForSurface(surfaceType) {
     
     cubeMesh = null;
     wireModel = null;
+    puddleModel = null;
     placedSurfaceType = surfaceType;
     
     // Track model type for quiz system
-    currentModelType = surfaceType === 'wall' ? 'wire-model' : 'green-cube';
+    currentModelType = surfaceType === 'wall' ? 'wire-model' : 'puddle-model';
     
     if (surfaceType === 'wall') {
         // Load wire.glb for walls - using bouncing-band pattern
@@ -832,11 +834,32 @@ async function createContentForSurface(surfaceType) {
             // Center the model
             wireModel.position.sub(center.multiplyScalar(wireModel.scale.x));
             
-            // Make sure model is visible
+            // Make sure model is visible and enhance brightness
             wireModel.visible = true;
             wireModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
+                    
+                    // Enhance brightness
+                    if (child.material) {
+                        // Handle both single material and material arrays
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        
+                        materials.forEach((material) => {
+                            if (material) {
+                                // Add emissive color to make it brighter
+                                if (!material.emissive) {
+                                    material.emissive = new THREE.Color();
+                                }
+                                // Set emissive to a bright color
+                                material.emissive.setHex(0x444444); // Light gray emissive for brightness
+                                material.emissiveIntensity = 0.5; // Moderate emissive intensity
+                                
+                                // Ensure material is properly configured
+                                material.needsUpdate = true;
+                            }
+                        });
+                    }
                 }
             });
             
@@ -858,12 +881,110 @@ async function createContentForSurface(surfaceType) {
             createWallPlaceholder();
         }
     } else {
-        // Create green box for floors
-        console.log('Creating green box for floor surface');
-        createGreenBox();
+        // Load puddle.glb for floors
+        console.log('Loading puddle.glb for floor surface...');
         
         if (window.Toast) {
-            window.Toast.success('Floor cube placed!', 'Success', 2000);
+            window.Toast.info('Loading puddle model...', 'Loading', 2000);
+        }
+        
+        try {
+            // Initialize the loader if not already done
+            if (!gltfLoader) {
+                gltfLoader = initGLTFLoader();
+            }
+            
+            if (!gltfLoader) {
+                throw new Error('GLTFLoader not available - check that Three.js and GLTFLoader scripts are loaded');
+            }
+            
+            console.log('=== PUDDLE.GLB LOADING START ===');
+            console.log('Using loadModel() function');
+            
+            // Use the loadModel function
+            const gltf = await loadModel('/assets/puddle.glb');
+            
+            console.log('=== PUDDLE.GLB LOADED SUCCESSFULLY ===');
+            console.log('GLTF object:', gltf);
+            console.log('Scene children count:', gltf.scene ? gltf.scene.children.length : 0);
+            
+            // Clone the scene so each spawn gets a fresh copy
+            puddleModel = gltf.scene.clone();
+            
+            if (!puddleModel) {
+                throw new Error('gltf.scene is null or undefined');
+            }
+            
+            // Calculate bounding box to understand model size
+            const box = new THREE.Box3().setFromObject(puddleModel);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+            console.log('Model bounding box size:', size);
+            console.log('Model center:', center);
+            
+            // Reset position and scale for fresh spawn
+            puddleModel.position.set(0, 0, 0);
+            puddleModel.scale.set(1, 1, 1);
+            
+            // Auto-scale model - similar to wire model
+            const maxDimension = Math.max(size.x, size.y, size.z);
+            if (maxDimension > 0) {
+                const targetSize = 0.3; // Target 30cm for largest dimension
+                const scaleFactor = (targetSize / maxDimension) * 0.7; // Scale down to 0.7x size
+                puddleModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
+                console.log(`Auto-scaled model by factor: ${scaleFactor.toFixed(2)}`);
+            } else {
+                puddleModel.scale.set(1, 1, 1);
+            }
+            
+            // Center the model
+            puddleModel.position.sub(center.multiplyScalar(puddleModel.scale.x));
+            
+            // Make sure model is visible and enhance brightness
+            puddleModel.visible = true;
+            puddleModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.visible = true;
+                    
+                    // Enhance brightness like the wires
+                    if (child.material) {
+                        // Handle both single material and material arrays
+                        const materials = Array.isArray(child.material) ? child.material : [child.material];
+                        
+                        materials.forEach((material) => {
+                            if (material) {
+                                // Add emissive color to make it brighter
+                                if (!material.emissive) {
+                                    material.emissive = new THREE.Color();
+                                }
+                                // Set emissive to a bright color (similar to wire brightness)
+                                material.emissive.setHex(0x444444); // Light gray emissive for brightness
+                                material.emissiveIntensity = 0.5; // Moderate emissive intensity
+                                
+                                // Ensure material is properly configured
+                                material.needsUpdate = true;
+                            }
+                        });
+                    }
+                }
+            });
+            
+            contentGroup.add(puddleModel);
+            console.log('=== PUDDLE.GLB ADDED TO SCENE ===');
+            
+            if (window.Toast) {
+                window.Toast.success('Puddle model placed!', 'Success', 3000);
+            }
+        } catch (error) {
+            console.error('=== FAILED TO LOAD PUDDLE.GLB ===');
+            console.error('Error:', error?.message || String(error));
+            
+            if (window.Toast) {
+                window.Toast.error(`Failed to load puddle model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000);
+            }
+            
+            console.log('Falling back to green box for floor');
+            createGreenBox();
         }
     }
 }
@@ -948,7 +1069,7 @@ function setupTapToPlace() {
         // content at that location and choose the asset based on the currently
         // detected surface type. This allows:
         // - First tap on a wall → spawn wire.glb
-        // - Second tap on the floor → replace with green cube
+        // - Second tap on the floor → replace with puddle model
         if (reticle.visible && currentSurfaceType) {
             // Create appropriate content based on detected surface type
             await createContentForSurface(currentSurfaceType);
@@ -1503,6 +1624,7 @@ function resetAnchor() {
     // Reset references
     cubeMesh = null;
     wireModel = null;
+    puddleModel = null;
     currentModelType = null;
     
     // Reset gaze detection

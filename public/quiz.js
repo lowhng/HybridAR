@@ -46,6 +46,26 @@ const quizData = {
             }
         ]
     },
+    'puddle-model': {
+        title: 'Puddle Quiz',
+        questions: [
+            {
+                question: 'What is a puddle?',
+                options: ['A small pool of liquid', 'A type of rock', 'A cloud formation', 'A type of plant'],
+                correct: 0
+            },
+            {
+                question: 'Puddles are commonly formed by:',
+                options: ['Rain', 'Snow', 'Wind', 'Sunlight'],
+                correct: 0
+            },
+            {
+                question: 'What property allows liquids to form puddles?',
+                options: ['Viscosity', 'Surface tension', 'Density', 'Temperature'],
+                correct: 1
+            }
+        ]
+    },
     'mindar-cube': {
         title: 'AR Cube Quiz',
         questions: [
@@ -105,7 +125,7 @@ function renderQuiz(modelType) {
     currentQuiz = quizData[modelType];
     if (!currentQuiz) {
         console.error(`No quiz data found for model type: ${modelType}`);
-        currentQuiz = quizData['green-cube']; // Fallback
+        currentQuiz = quizData['puddle-model']; // Fallback
     }
 
     // Reset quiz state
