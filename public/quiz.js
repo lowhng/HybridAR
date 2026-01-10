@@ -280,7 +280,7 @@ function showQuizView(modelType) {
     renderQuiz(modelType);
 }
 
-function hideQuizView() {
+async function hideQuizView() {
     const elements = getQuizElements();
     if (!elements.quizView || !elements.arContainer) return;
 
@@ -290,11 +290,69 @@ function hideQuizView() {
     // Show AR view
     elements.arContainer.classList.remove('hidden');
     
+    // Show AR-related buttons again
+    const resetButton = document.getElementById('reset-button');
+    if (resetButton) resetButton.classList.remove('hidden');
+    // Quiz button will be shown again when user gazes at model
+    
     // Reset quiz state
     currentQuiz = null;
     currentQuestionIndex = 0;
     userAnswers = [];
     quizStarted = false;
+    
+    // Restart AR session to restore camera view
+    try {
+        const arSystem = window.ARController?.getCurrentSystem?.();
+        
+        if (arSystem === 'webxr') {
+            // Reset WebXR content first to clear any placed models
+            if (window.WebXRAR && window.WebXRAR.reset) {
+                window.WebXRAR.reset();
+            }
+            // Restart WebXR session
+            if (window.WebXRAR && window.WebXRAR.init) {
+                console.log('Restarting WebXR session...');
+                await window.WebXRAR.init();
+                console.log('WebXR session restarted successfully');
+            }
+        } else if (arSystem === 'mindar') {
+            // Reset MindAR state first
+            if (window.MindARAR && window.MindARAR.reset) {
+                window.MindARAR.reset();
+            }
+            // Restart MindAR session
+            if (window.MindARAR && window.MindARAR.init) {
+                console.log('Restarting MindAR session...');
+                await window.MindARAR.init();
+                console.log('MindAR session restarted successfully');
+            }
+        } else {
+            // Try to detect which system to use
+            if (window.WebXRAR && window.WebXRAR.init) {
+                console.log('AR system not detected, trying WebXR...');
+                // Reset first if available
+                if (window.WebXRAR.reset) {
+                    window.WebXRAR.reset();
+                }
+                await window.WebXRAR.init();
+            } else if (window.MindARAR && window.MindARAR.init) {
+                console.log('AR system not detected, trying MindAR...');
+                // Reset first if available
+                if (window.MindARAR.reset) {
+                    window.MindARAR.reset();
+                }
+                await window.MindARAR.init();
+            } else {
+                console.warn('No AR system available to restart');
+            }
+        }
+    } catch (error) {
+        console.error('Error restarting AR session:', error);
+        if (window.Toast) {
+            window.Toast.error('Failed to restart AR session. Please refresh the page.', 'AR Restart Failed', 5000);
+        }
+    }
 }
 
 // ============================================================================
@@ -305,14 +363,8 @@ function hideQuizView() {
 document.addEventListener('DOMContentLoaded', () => {
     const backButton = document.getElementById('back-to-ar-button');
     if (backButton) {
-        backButton.addEventListener('click', () => {
-            hideQuizView();
-            // Restart AR session if needed
-            if (window.ARController && window.ARController.init) {
-                // Note: This will restart the AR session
-                // You might want to handle this differently based on your needs
-                console.log('Returning to AR view');
-            }
+        backButton.addEventListener('click', async () => {
+            await hideQuizView();
         });
     }
 });
