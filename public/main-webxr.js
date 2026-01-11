@@ -113,7 +113,7 @@ let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
-let currentModelType = null; // 'wire-model', 'puddle-model', etc.
+let currentModelType = null; // 'wire-model', 'green-cube', etc.
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -834,48 +834,13 @@ async function createContentForSurface(surfaceType) {
             // Center the model
             wireModel.position.sub(center.multiplyScalar(wireModel.scale.x));
             
-            // Make sure model is visible and enhance brightness
+            // Make sure model is visible
             wireModel.visible = true;
-            try {
-                wireModel.traverse((child) => {
-                    if (child && child.isMesh) {
-                        child.visible = true;
-                        
-                        // Enhance brightness - safely handle materials
-                        if (child.material) {
-                            const materials = Array.isArray(child.material) ? child.material : [child.material];
-                            
-                            for (const material of materials) {
-                                if (!material || typeof material !== 'object') continue;
-                                
-                                try {
-                                    // Only modify if material has emissive support
-                                    if (material.emissive !== undefined) {
-                                        if (!material.emissive) {
-                                            material.emissive = new THREE.Color(0x444444);
-                                        } else if (material.emissive.setHex) {
-                                            material.emissive.setHex(0x444444);
-                                        }
-                                        
-                                        if (material.emissiveIntensity !== undefined) {
-                                            material.emissiveIntensity = 0.5;
-                                        }
-                                        
-                                        if (material.needsUpdate !== undefined) {
-                                            material.needsUpdate = true;
-                                        }
-                                    }
-                                } catch (e) {
-                                    // Silently continue - material might not support these properties
-                                }
-                            }
-                        }
-                    }
-                });
-            } catch (traverseError) {
-                console.warn('Error during model traversal:', traverseError);
-                // Continue - model is still usable without brightness enhancement
-            }
+            wireModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.visible = true;
+                }
+            });
             
             contentGroup.add(wireModel);
             console.log('=== WIRE.GLB ADDED TO SCENE ===');
@@ -895,7 +860,7 @@ async function createContentForSurface(surfaceType) {
             createWallPlaceholder();
         }
     } else {
-        // Load puddle.glb for floors
+        // Load puddle.glb for floors - using bouncing-band pattern
         console.log('Loading puddle.glb for floor surface...');
         
         if (window.Toast) {
@@ -913,16 +878,16 @@ async function createContentForSurface(surfaceType) {
             }
             
             console.log('=== PUDDLE.GLB LOADING START ===');
-            console.log('Using loadModel() function');
+            console.log('Using loadModel() function (bouncing-band pattern)');
             
-            // Use the loadModel function
+            // Use the loadModel function (bouncing-band pattern)
             const gltf = await loadModel('/assets/puddle.glb');
             
             console.log('=== PUDDLE.GLB LOADED SUCCESSFULLY ===');
             console.log('GLTF object:', gltf);
             console.log('Scene children count:', gltf.scene ? gltf.scene.children.length : 0);
             
-            // Clone the scene so each spawn gets a fresh copy
+            // Clone the scene so each spawn gets a fresh copy with reset rotation
             puddleModel = gltf.scene.clone();
             
             if (!puddleModel) {
@@ -937,10 +902,11 @@ async function createContentForSurface(surfaceType) {
             console.log('Model center:', center);
             
             // Reset position and scale for fresh spawn
+            // Don't reset rotation - preserve model's original rotation from GLB file
             puddleModel.position.set(0, 0, 0);
             puddleModel.scale.set(1, 1, 1);
             
-            // Auto-scale model - similar to wire model
+            // Auto-scale model - similar to bouncing-band's approach
             const maxDimension = Math.max(size.x, size.y, size.z);
             if (maxDimension > 0) {
                 const targetSize = 0.3; // Target 30cm for largest dimension
@@ -954,48 +920,13 @@ async function createContentForSurface(surfaceType) {
             // Center the model
             puddleModel.position.sub(center.multiplyScalar(puddleModel.scale.x));
             
-            // Make sure model is visible and enhance brightness
+            // Make sure model is visible
             puddleModel.visible = true;
-            try {
-                puddleModel.traverse((child) => {
-                    if (child && child.isMesh) {
-                        child.visible = true;
-                        
-                        // Enhance brightness - safely handle materials
-                        if (child.material) {
-                            const materials = Array.isArray(child.material) ? child.material : [child.material];
-                            
-                            for (const material of materials) {
-                                if (!material || typeof material !== 'object') continue;
-                                
-                                try {
-                                    // Only modify if material has emissive support
-                                    if (material.emissive !== undefined) {
-                                        if (!material.emissive) {
-                                            material.emissive = new THREE.Color(0x444444);
-                                        } else if (material.emissive.setHex) {
-                                            material.emissive.setHex(0x444444);
-                                        }
-                                        
-                                        if (material.emissiveIntensity !== undefined) {
-                                            material.emissiveIntensity = 0.5;
-                                        }
-                                        
-                                        if (material.needsUpdate !== undefined) {
-                                            material.needsUpdate = true;
-                                        }
-                                    }
-                                } catch (e) {
-                                    // Silently continue - material might not support these properties
-                                }
-                            }
-                        }
-                    }
-                });
-            } catch (traverseError) {
-                console.warn('Error during model traversal:', traverseError);
-                // Continue - model is still usable without brightness enhancement
-            }
+            puddleModel.traverse((child) => {
+                if (child.isMesh) {
+                    child.visible = true;
+                }
+            });
             
             contentGroup.add(puddleModel);
             console.log('=== PUDDLE.GLB ADDED TO SCENE ===');
@@ -1093,15 +1024,14 @@ function setupTapToPlace() {
     if (!xrSession) return;
     
     xrSession.addEventListener('select', async () => {
-        try {
-            // If we have a visible reticle (hit-test result), always (re)place the
-            // content at that location and choose the asset based on the currently
-            // detected surface type. This allows:
-            // - First tap on a wall → spawn wire.glb
-            // - Second tap on the floor → replace with puddle model
-            if (reticle.visible && currentSurfaceType) {
-                // Create appropriate content based on detected surface type
-                await createContentForSurface(currentSurfaceType);
+        // If we have a visible reticle (hit-test result), always (re)place the
+        // content at that location and choose the asset based on the currently
+        // detected surface type. This allows:
+        // - First tap on a wall → spawn wire.glb
+        // - Second tap on the floor → replace with green cube
+        if (reticle.visible && currentSurfaceType) {
+            // Create appropriate content based on detected surface type
+            await createContentForSurface(currentSurfaceType);
             
             // CRITICAL: Reset all transforms before applying new ones
             // This ensures each spawn starts fresh and doesn't retain previous rotation
@@ -1135,17 +1065,17 @@ function setupTapToPlace() {
                 contentGroup.quaternion.multiply(upwardRotation);
               }
             
-                contentGroup.matrixAutoUpdate = true;
-                contentGroup.visible = true;
-                isAnchored = true;
-                console.log(`Content placed at detected surface (${currentSurfaceType})`);
-                return;
-            }
-            
-            // Fallback: If hit-test didn't detect a surface (e.g., looking at a wall
-            // on devices that only support floor detection), place content in front
-            // of camera and infer surface type from gaze direction
-            const frame = renderer.xr.getFrame();
+            contentGroup.matrixAutoUpdate = true;
+            contentGroup.visible = true;
+            isAnchored = true;
+            console.log(`Content placed at detected surface (${currentSurfaceType})`);
+            return;
+        }
+        
+        // Fallback: If hit-test didn't detect a surface (e.g., looking at a wall
+        // on devices that only support floor detection), place content in front
+        // of camera and infer surface type from gaze direction
+        const frame = renderer.xr.getFrame();
         if (frame) {
             const pose = frame.getViewerPose(xrReferenceSpace);
             if (pose && pose.views && pose.views.length > 0) {
@@ -1187,12 +1117,6 @@ function setupTapToPlace() {
                 contentGroup.visible = true;
                 isAnchored = true;
                 console.log(`Content placed in front of camera as ${inferredSurfaceType}`);
-            }
-        }
-        } catch (error) {
-            console.error('Error in select event handler:', error);
-            if (window.Toast) {
-                window.Toast.error(`Failed to place content: ${error.message || 'Unknown error'}`, 'Placement Error', 5000);
             }
         }
     });
@@ -1394,14 +1318,14 @@ function onXRFrame(timestamp, frame) {
         }
     }
 
-    // Animate the cube (only if it's a cube, not wire model)
+    // Animate the cube (only if it's a cube, not wire model or puddle model)
     if (cubeMesh && isAnchored) {
         animationTime = timestamp * 0.001;
         cubeMesh.rotation.y = animationTime;
         cubeMesh.rotation.x = animationTime * 0.5;
     }
     
-    // Wire model stays static (no rotation)
+    // Wire model and puddle model stay static (no rotation)
 
     // Update gaze detection
     if (isAnchored) {
