@@ -906,30 +906,71 @@ async function createContentForSurface(surfaceType) {
             puddleModel.position.set(0, 0, 0);
             puddleModel.scale.set(1, 1, 1);
             
-            // Auto-scale model - similar to bouncing-band's approach
+            // Auto-scale model - make it larger for floor visibility
             const maxDimension = Math.max(size.x, size.y, size.z);
             if (maxDimension > 0) {
-                const targetSize = 0.3; // Target 30cm for largest dimension
-                const scaleFactor = (targetSize / maxDimension) * 0.7; // Scale down to 0.7x size
+                const targetSize = 0.5; // Target 50cm for largest dimension (larger than wire model for floor visibility)
+                const scaleFactor = targetSize / maxDimension;
                 puddleModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
-                console.log(`Auto-scaled model by factor: ${scaleFactor.toFixed(2)}`);
+                console.log(`Auto-scaled puddle model by factor: ${scaleFactor.toFixed(2)}`);
+                console.log(`Puddle model target size: ${targetSize}m, original max dimension: ${maxDimension.toFixed(3)}m`);
             } else {
                 puddleModel.scale.set(1, 1, 1);
             }
             
-            // Center the model
+            // Position the model on the floor surface
+            // First center the model (same as wire model)
             puddleModel.position.sub(center.multiplyScalar(puddleModel.scale.x));
             
-            // Make sure model is visible
+            // Then adjust Y position so the model sits on the floor
+            // The model is now centered, but we need to move it so the bottom is at Y=0
+            // Calculate the bottom of the bounding box after scaling
+            const scaledSize = size.clone().multiplyScalar(puddleModel.scale.x);
+            // The current position.y is the center, so move down by half the height
+            // Then add a small offset to ensure visibility above floor
+            const floorOffset = 0.01; // 1cm above floor
+            puddleModel.position.y = scaledSize.y / 2 + floorOffset;
+            
+            console.log('Puddle model position:', puddleModel.position);
+            console.log('Puddle model scale:', puddleModel.scale);
+            console.log('Puddle model scaled size:', scaledSize);
+            
+            // Make sure model is visible and materials are properly set
             puddleModel.visible = true;
             puddleModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
+                    // Ensure materials are not transparent and are visible
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                if (mat) {
+                                    mat.transparent = false;
+                                    mat.opacity = 1.0;
+                                    mat.visible = true;
+                                }
+                            });
+                        } else {
+                            child.material.transparent = false;
+                            child.material.opacity = 1.0;
+                            child.material.visible = true;
+                        }
+                    }
                 }
             });
             
             contentGroup.add(puddleModel);
             console.log('=== PUDDLE.GLB ADDED TO SCENE ===');
+            console.log('ContentGroup children count:', contentGroup.children.length);
+            console.log('ContentGroup visible:', contentGroup.visible);
+            console.log('PuddleModel visible:', puddleModel.visible);
+            
+            // Verify final bounding box after all transformations
+            const finalBox = new THREE.Box3().setFromObject(puddleModel);
+            const finalSize = finalBox.getSize(new THREE.Vector3());
+            const finalCenter = finalBox.getCenter(new THREE.Vector3());
+            console.log('Final puddle model bounding box size:', finalSize);
+            console.log('Final puddle model bounding box center:', finalCenter);
             
             if (window.Toast) {
                 window.Toast.success('Puddle model placed!', 'Success', 3000);
