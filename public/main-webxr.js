@@ -569,23 +569,12 @@ async function initWebXR() {
                 resetButton.addEventListener('pointerdown', stopPropagation);
             }
             
-            // Add click/touch handlers to quiz button to stop propagation and handle click
+            // Attach quiz button handler
             const quizButton = document.getElementById('quiz-button');
             if (quizButton) {
-                const stopPropagation = (e) => {
-                    e.stopPropagation();
-                };
-                quizButton.addEventListener('click', stopPropagation);
-                quizButton.addEventListener('touchstart', stopPropagation);
-                quizButton.addEventListener('pointerdown', stopPropagation);
-                
-                // Add click handler for quiz button
-                quizButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (window.WebXRAR && window.WebXRAR.exitToQuiz) {
-                        window.WebXRAR.exitToQuiz();
-                    }
-                });
+                attachQuizButtonHandler(quizButton);
+            } else {
+                console.warn('Quiz button not found when setting up handlers');
             }
             
             // Handle any close button if it exists
@@ -1531,9 +1520,87 @@ function showQuizButton() {
         if (overlayUI && quizButton.parentElement !== overlayUI) {
             overlayUI.appendChild(quizButton);
             console.log('Quiz button moved to overlay UI');
+            // Re-attach click handler after moving (in case it was lost)
+            attachQuizButtonHandler(quizButton);
         }
         quizButton.classList.remove('hidden');
     }
+}
+
+/**
+ * Attaches the quiz button click handler
+ */
+function attachQuizButtonHandler(button) {
+    if (!button) {
+        console.warn('attachQuizButtonHandler: button is null');
+        return;
+    }
+    
+    console.log('Attaching quiz button handler to:', button);
+    
+    // Store the handler function so we can remove it if needed
+    const clickHandler = (e) => {
+        console.log('=== Quiz button clicked ===');
+        console.log('Event:', e);
+        console.log('Event type:', e.type);
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        
+        // Force call exitToQuiz
+        console.log('Checking WebXRAR:', window.WebXRAR);
+        if (window.WebXRAR) {
+            console.log('WebXRAR found, checking exitToQuiz:', typeof window.WebXRAR.exitToQuiz);
+            if (window.WebXRAR.exitToQuiz) {
+                console.log('Calling window.WebXRAR.exitToQuiz()');
+                try {
+                    window.WebXRAR.exitToQuiz();
+                    console.log('exitToQuiz called successfully');
+                } catch (error) {
+                    console.error('Error calling exitToQuiz:', error);
+                    if (window.Toast) {
+                        window.Toast.error('Error starting quiz: ' + error.message, 'Error', 5000);
+                    }
+                }
+            } else {
+                console.error('WebXRAR.exitToQuiz is not a function');
+                console.log('Available WebXRAR methods:', Object.keys(window.WebXRAR));
+                if (window.Toast) {
+                    window.Toast.error('Quiz function not available. Please refresh the page.', 'Error', 5000);
+                }
+            }
+        } else {
+            console.error('window.WebXRAR is not defined');
+            if (window.Toast) {
+                window.Toast.error('AR system not available. Please refresh the page.', 'Error', 5000);
+            }
+        }
+    };
+    
+    // Remove any existing listeners by cloning (but preserve the button)
+    // Actually, let's just add the listener - multiple listeners should be fine
+    button.addEventListener('click', clickHandler, { capture: true, once: false });
+    
+    // Also handle touch events for mobile
+    button.addEventListener('touchend', (e) => {
+        console.log('Quiz button touched');
+        e.preventDefault();
+        e.stopPropagation();
+        clickHandler(e);
+    }, { capture: true });
+    
+    // Also add handlers to prevent XR select
+    button.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+    });
+    button.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+    });
+    
+    // Set onclick as backup (though this shouldn't be necessary)
+    button.onclick = clickHandler;
+    
+    console.log('Quiz button handler attached successfully');
 }
 
 /**
@@ -1550,8 +1617,14 @@ function hideQuizButton() {
  * Exits AR and shows quiz view
  */
 function exitARToQuiz() {
+    console.log('=== exitARToQuiz function called ===');
+    console.log('currentModelType:', currentModelType);
+    
     if (!currentModelType) {
         console.warn('No model type available for quiz');
+        if (window.Toast) {
+            window.Toast.warning('No model detected. Please place a model first.', 'No Model', 3000);
+        }
         return;
     }
 
@@ -1634,15 +1707,37 @@ function exitARToQuiz() {
 
     console.log('AR cleanup complete - all processes stopped');
 
-    // Small delay to ensure cleanup is complete before showing quiz
-    setTimeout(() => {
-        // Show quiz view
-        if (window.QuizSystem && window.QuizSystem.showQuiz) {
-            window.QuizSystem.showQuiz(currentModelType);
+    // Store model type before showing quiz (in case it gets cleared)
+    const modelTypeForQuiz = currentModelType;
+    console.log('Model type for quiz:', modelTypeForQuiz);
+
+    // Show quiz view immediately after cleanup
+    if (window.QuizSystem) {
+        console.log('QuizSystem found');
+        if (window.QuizSystem.showQuiz) {
+            console.log('Calling QuizSystem.showQuiz with model type:', modelTypeForQuiz);
+            try {
+                window.QuizSystem.showQuiz(modelTypeForQuiz);
+                console.log('QuizSystem.showQuiz called successfully');
+            } catch (error) {
+                console.error('Error calling QuizSystem.showQuiz:', error);
+                if (window.Toast) {
+                    window.Toast.error('Error showing quiz: ' + error.message, 'Quiz Error', 5000);
+                }
+            }
         } else {
-            console.error('QuizSystem not available');
+            console.error('QuizSystem.showQuiz is not a function');
+            if (window.Toast) {
+                window.Toast.error('Quiz system showQuiz function not found.', 'Quiz Error', 5000);
+            }
         }
-    }, 100);
+    } else {
+        console.error('QuizSystem not available on window object');
+        console.log('Available window properties:', Object.keys(window).filter(k => k.toLowerCase().includes('quiz')));
+        if (window.Toast) {
+            window.Toast.error('Quiz system is not available. Please refresh the page.', 'Quiz Error', 5000);
+        }
+    }
 }
 
 // ============================================================================
