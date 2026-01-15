@@ -87,38 +87,26 @@
      * @param {string} modelType - The type of model ('wire-model', 'green-cube')
      */
     function showQuiz(modelType) {
-        console.log('=== QuizSystem.showQuiz called ===');
-        console.log('Model type:', modelType);
-        console.log('Quiz data keys:', Object.keys(quizData));
+        console.log('Showing quiz for model type:', modelType);
         
         if (!getDOMElements()) {
             console.error('Failed to get quiz DOM elements');
-            console.error('quizView:', quizView);
-            console.error('quizContent:', quizContent);
             if (window.Toast) {
                 window.Toast.error('Quiz UI elements not found. Please refresh the page.', 'Quiz Error', 5000);
             }
             return;
         }
 
-        console.log('DOM elements found successfully');
-        console.log('quizView:', quizView);
-        console.log('quizContent:', quizContent);
-
         // Get quiz data for this model type
         currentQuiz = quizData[modelType];
-        console.log('Current quiz data:', currentQuiz);
         
         if (!currentQuiz) {
             console.error('No quiz data found for model type:', modelType);
-            console.error('Available model types:', Object.keys(quizData));
             if (window.Toast) {
                 window.Toast.error(`No quiz available for ${modelType}`, 'Quiz Error', 5000);
             }
             return;
         }
-        
-        console.log('Quiz data found, proceeding to show quiz...');
 
         // Reset quiz state
         currentQuestionIndex = 0;
