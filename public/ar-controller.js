@@ -12,6 +12,7 @@ let capabilities = null;
 // ============================================================================
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
+const logoContainer = document.getElementById('logo-container');
 
 // ============================================================================
 // INITIALIZATION
@@ -48,9 +49,12 @@ async function initializeAR() {
         return;
     }
     
-    // Hide start button
+    // Hide start button and logo
     if (startButton) {
         startButton.classList.add('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.add('hidden');
     }
     
     // Show reset button for WebXR
@@ -89,11 +93,14 @@ async function initializeAR() {
             alert(`Failed to start AR:\n\n${fullMessage}`);
         }
         
-        // Re-enable start button
+        // Re-enable start button and show logo
         if (startButton) {
             startButton.disabled = false;
             startButton.textContent = 'Start AR';
             startButton.classList.remove('hidden');
+        }
+        if (logoContainer) {
+            logoContainer.classList.remove('hidden');
         }
         
         // Hide reset button on error
@@ -316,6 +323,9 @@ if (startButton) {
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';
                 startButton.classList.remove('hidden');
+            }
+            if (logoContainer) {
+                logoContainer.classList.remove('hidden');
             }
         }
     });
