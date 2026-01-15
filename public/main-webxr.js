@@ -113,7 +113,7 @@ let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
-let currentModelType = null; // 'wire-model', 'green-cube', etc.
+let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), 'mindar-cube', etc.
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -771,7 +771,9 @@ async function createContentForSurface(surfaceType) {
     placedSurfaceType = surfaceType;
     
     // Track model type for quiz system
-    currentModelType = surfaceType === 'wall' ? 'wire-model' : 'puddle-model';
+    // Note: Using 'green-cube' for floor to maintain quiz system compatibility
+    // (even though we're now loading puddle.glb instead of a green cube)
+    currentModelType = surfaceType === 'wall' ? 'wire-model' : 'green-cube';
     
     if (surfaceType === 'wall') {
         // Load wire.glb for walls - using bouncing-band pattern
