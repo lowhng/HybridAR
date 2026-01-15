@@ -1,0 +1,395 @@
+// Quiz System for AR Experience
+// Provides interactive quizzes based on the AR model type
+
+(function() {
+    'use strict';
+
+    // ============================================================================
+    // QUIZ DATA
+    // ============================================================================
+    
+    const quizData = {
+        'wire-model': {
+            title: 'Wire Model Quiz',
+            questions: [
+                {
+                    question: 'What type of surface is the wire model designed for?',
+                    options: ['Wall', 'Floor', 'Ceiling', 'Any surface'],
+                    correct: 0
+                },
+                {
+                    question: 'What color does the reticle appear when detecting a wall?',
+                    options: ['Cyan', 'Orange', 'Green', 'Blue'],
+                    correct: 1
+                },
+                {
+                    question: 'How long do you need to gaze at the model to see the quiz button?',
+                    options: ['1 second', '2 seconds', '3 seconds', '5 seconds'],
+                    correct: 1
+                }
+            ]
+        },
+        'green-cube': {
+            title: 'Floor Model Quiz',
+            questions: [
+                {
+                    question: 'What type of surface is the puddle model designed for?',
+                    options: ['Wall', 'Floor', 'Ceiling', 'Any surface'],
+                    correct: 1
+                },
+                {
+                    question: 'What color does the reticle appear when detecting a floor?',
+                    options: ['Cyan', 'Orange', 'Green', 'Blue'],
+                    correct: 0
+                },
+                {
+                    question: 'What is the target size for the floor model?',
+                    options: ['30cm', '40cm', '50cm', '60cm'],
+                    correct: 2
+                }
+            ]
+        },
+        'mindar-cube': {
+            title: 'MindAR Cube Quiz',
+            questions: [
+                {
+                    question: 'What AR technology does MindAR use?',
+                    options: ['Image tracking', 'Marker tracking', 'SLAM', 'GPS'],
+                    correct: 0
+                },
+                {
+                    question: 'What happens when the MindAR target is lost?',
+                    options: ['Model disappears', 'Model freezes in place', 'Model resets', 'Model moves randomly'],
+                    correct: 1
+                },
+                {
+                    question: 'How is the MindAR model tracked?',
+                    options: ['By camera position', 'By image target', 'By GPS coordinates', 'By hand gestures'],
+                    correct: 1
+                }
+            ]
+        }
+    };
+
+    // ============================================================================
+    // STATE
+    // ============================================================================
+    
+    let currentQuiz = null;
+    let currentQuestionIndex = 0;
+    let userAnswers = [];
+    let quizView = null;
+    let quizContent = null;
+    let backToARButton = null;
+
+    // ============================================================================
+    // DOM ELEMENTS
+    // ============================================================================
+    
+    function getDOMElements() {
+        quizView = document.getElementById('quiz-view');
+        quizContent = document.getElementById('quiz-content');
+        backToARButton = document.getElementById('back-to-ar-button');
+        
+        if (!quizView || !quizContent) {
+            console.error('Quiz DOM elements not found');
+            return false;
+        }
+        return true;
+    }
+
+    // ============================================================================
+    // QUIZ DISPLAY
+    // ============================================================================
+    
+    /**
+     * Shows the quiz for a given model type
+     * @param {string} modelType - The type of model ('wire-model', 'green-cube', 'mindar-cube')
+     */
+    function showQuiz(modelType) {
+        console.log('Showing quiz for model type:', modelType);
+        
+        if (!getDOMElements()) {
+            console.error('Failed to get quiz DOM elements');
+            if (window.Toast) {
+                window.Toast.error('Quiz UI elements not found. Please refresh the page.', 'Quiz Error', 5000);
+            }
+            return;
+        }
+
+        // Get quiz data for this model type
+        currentQuiz = quizData[modelType];
+        
+        if (!currentQuiz) {
+            console.error('No quiz data found for model type:', modelType);
+            if (window.Toast) {
+                window.Toast.error(`No quiz available for ${modelType}`, 'Quiz Error', 5000);
+            }
+            return;
+        }
+
+        // Reset quiz state
+        currentQuestionIndex = 0;
+        userAnswers = [];
+
+        // Hide AR container
+        const arContainer = document.getElementById('ar-container');
+        if (arContainer) {
+            arContainer.style.display = 'none';
+        }
+
+        // Show quiz view
+        quizView.classList.remove('hidden');
+
+        // Render first question
+        renderQuestion();
+
+        // Set up back button handler
+        if (backToARButton) {
+            backToARButton.onclick = backToAR;
+        }
+    }
+
+    /**
+     * Renders the current question
+     */
+    function renderQuestion() {
+        if (!currentQuiz || !quizContent) {
+            return;
+        }
+
+        const question = currentQuiz.questions[currentQuestionIndex];
+        const totalQuestions = currentQuiz.questions.length;
+        const progress = ((currentQuestionIndex + 1) / totalQuestions) * 100;
+
+        // Build HTML
+        let html = `
+            <div class="quiz-header">
+                <h2>${currentQuiz.title}</h2>
+                <div class="quiz-progress">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <span class="progress-text">Question ${currentQuestionIndex + 1} of ${totalQuestions}</span>
+                </div>
+            </div>
+            <div class="question-container">
+                <div class="question-text">${question.question}</div>
+                <div class="options-container">
+        `;
+
+        // Add answer options
+        question.options.forEach((option, index) => {
+            html += `
+                <button class="option-button" data-index="${index}">
+                    ${option}
+                </button>
+            `;
+        });
+
+        html += `
+                </div>
+            </div>
+            <div class="quiz-navigation">
+        `;
+
+        // Previous button (disabled on first question)
+        if (currentQuestionIndex > 0) {
+            html += `<button class="nav-button prev-button">Previous</button>`;
+        } else {
+            html += `<button class="nav-button prev-button" disabled>Previous</button>`;
+        }
+
+        // Next/Submit button
+        if (currentQuestionIndex < totalQuestions - 1) {
+            html += `<button class="nav-button primary next-button">Next</button>`;
+        } else {
+            html += `<button class="nav-button primary submit-button">Submit Quiz</button>`;
+        }
+
+        html += `</div>`;
+
+        quizContent.innerHTML = html;
+
+        // Attach event listeners
+        attachQuestionListeners();
+    }
+
+    /**
+     * Attaches event listeners to question elements
+     */
+    function attachQuestionListeners() {
+        // Answer option buttons
+        const answerOptions = quizContent.querySelectorAll('.option-button');
+        answerOptions.forEach(button => {
+            button.addEventListener('click', (e) => {
+                // Remove previous selection
+                answerOptions.forEach(opt => opt.classList.remove('selected'));
+                
+                // Mark this option as selected
+                e.target.classList.add('selected');
+                
+                // Store answer
+                const answerIndex = parseInt(e.target.getAttribute('data-index'));
+                userAnswers[currentQuestionIndex] = answerIndex;
+            });
+        });
+
+        // Navigation buttons
+        const prevButton = quizContent.querySelector('.prev-button');
+        if (prevButton && !prevButton.disabled) {
+            prevButton.addEventListener('click', () => {
+                if (currentQuestionIndex > 0) {
+                    currentQuestionIndex--;
+                    renderQuestion();
+                }
+            });
+        }
+
+        const nextButton = quizContent.querySelector('.next-button');
+        if (nextButton) {
+            nextButton.addEventListener('click', () => {
+                if (userAnswers[currentQuestionIndex] !== undefined) {
+                    if (currentQuestionIndex < currentQuiz.questions.length - 1) {
+                        currentQuestionIndex++;
+                        renderQuestion();
+                    }
+                } else {
+                    if (window.Toast) {
+                        window.Toast.warning('Please select an answer before continuing.', 'Select Answer', 3000);
+                    }
+                }
+            });
+        }
+
+        const submitButton = quizContent.querySelector('.submit-button');
+        if (submitButton) {
+            submitButton.addEventListener('click', () => {
+                if (userAnswers[currentQuestionIndex] !== undefined) {
+                    showResults();
+                } else {
+                    if (window.Toast) {
+                        window.Toast.warning('Please select an answer before submitting.', 'Select Answer', 3000);
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * Shows quiz results
+     */
+    function showResults() {
+        if (!currentQuiz || !quizContent) {
+            return;
+        }
+
+        const totalQuestions = currentQuiz.questions.length;
+        let correctCount = 0;
+
+        // Calculate score
+        currentQuiz.questions.forEach((question, index) => {
+            if (userAnswers[index] === question.correct) {
+                correctCount++;
+            }
+        });
+
+        const score = Math.round((correctCount / totalQuestions) * 100);
+
+        // Build results HTML
+        let html = `
+            <div class="quiz-header">
+                <h2>${currentQuiz.title} - Results</h2>
+            </div>
+            <div class="quiz-results">
+                <div class="score-display">
+                    <div class="score-circle">
+                        <div class="score-value">${score}%</div>
+                    </div>
+                    <p class="score-text">You got ${correctCount} out of ${totalQuestions} questions correct!</p>
+                </div>
+                <div class="results-breakdown">
+        `;
+
+        // Show each question and answer
+        currentQuiz.questions.forEach((question, index) => {
+            const userAnswer = userAnswers[index];
+            const isCorrect = userAnswer === question.correct;
+            const userAnswerText = question.options[userAnswer];
+            const correctAnswerText = question.options[question.correct];
+
+            html += `
+                <div class="result-item ${isCorrect ? 'correct' : 'incorrect'}">
+                    <div class="result-icon">${isCorrect ? '✓' : '✗'}</div>
+                    <div class="result-content">
+                        <div class="result-question">${question.question}</div>
+                        <div class="result-answer">
+                            <strong>Your answer:</strong> ${userAnswerText}
+                        </div>
+                        ${!isCorrect ? `<div class="result-correct"><strong>Correct answer:</strong> ${correctAnswerText}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `
+                </div>
+                <div class="quiz-navigation">
+                    <button class="nav-button primary restart-button">Restart Quiz</button>
+                </div>
+            </div>
+        `;
+
+        quizContent.innerHTML = html;
+
+        // Attach restart button listener
+        const restartButton = quizContent.querySelector('.restart-button');
+        if (restartButton) {
+            restartButton.addEventListener('click', () => {
+                currentQuestionIndex = 0;
+                userAnswers = [];
+                renderQuestion();
+            });
+        }
+    }
+
+    /**
+     * Returns to AR view
+     */
+    function backToAR() {
+        console.log('Returning to AR view');
+        
+        // Hide quiz view
+        if (quizView) {
+            quizView.classList.add('hidden');
+        }
+
+        // Show AR container
+        const arContainer = document.getElementById('ar-container');
+        if (arContainer) {
+            arContainer.style.display = 'block';
+        }
+
+        // Reset quiz state
+        currentQuiz = null;
+        currentQuestionIndex = 0;
+        userAnswers = [];
+
+        // Show start button to allow restarting AR
+        const startButton = document.getElementById('start-button');
+        if (startButton) {
+            startButton.classList.remove('hidden');
+        }
+    }
+
+    // ============================================================================
+    // EXPORT
+    // ============================================================================
+    
+    window.QuizSystem = {
+        showQuiz: showQuiz,
+        backToAR: backToAR
+    };
+
+    console.log('QuizSystem initialized');
+})();
