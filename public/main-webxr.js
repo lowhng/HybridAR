@@ -4,6 +4,20 @@
 // ============================================================================
 // EXPORT IMMEDIATELY
 // ============================================================================
+// Define debugMode and debugLog early to ensure they're always available
+let debugMode = false;
+
+/**
+ * Logs a debug message only if debug mode is enabled
+ * Defined early to ensure it's always available
+ * @param {...any} args - Arguments to pass to console.log
+ */
+function debugLog(...args) {
+    if (debugMode) {
+        console.log(...args);
+    }
+}
+
 if (typeof window !== 'undefined') {
     window.WebXRAR = window.WebXRAR || {};
     window.WebXRAR._scriptLoaded = true;
@@ -114,7 +128,7 @@ let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
 let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), etc.
-let debugMode = false; // Debug mode state (controls reticle and console logging)
+// debugMode is defined at the top of the file to ensure it's always available
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -219,7 +233,7 @@ function ensureOverlayRoot() {
     const quizButton = document.getElementById('quiz-button');
     if (quizButton && quizButton.parentElement !== overlayUI) {
         overlayUI.appendChild(quizButton);
-        console.log('Quiz button moved into overlay UI');
+        debugLog('Quiz button moved into overlay UI');
     }
     
     // Ensure toast container is accessible (can be sibling or inside overlay)
