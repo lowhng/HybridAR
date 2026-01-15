@@ -141,6 +141,14 @@
         // Show quiz view
         quizView.classList.remove('hidden');
 
+        // Ensure quiz view is scrollable and reset scroll position
+        quizView.style.overflowY = 'auto';
+        quizView.style.overflowX = 'hidden';
+        quizView.scrollTop = 0;
+        
+        // Force a reflow to ensure styles are applied
+        quizView.offsetHeight;
+
         // Render first question
         renderQuestion();
 
@@ -295,6 +303,14 @@
         });
 
         const score = Math.round((correctCount / totalQuestions) * 100);
+        
+        // Reset scroll position when showing results and ensure scrollability
+        if (quizView) {
+            quizView.scrollTop = 0;
+            quizView.style.overflowY = 'auto';
+            // Force a reflow
+            quizView.offsetHeight;
+        }
 
         // Build results HTML
         let html = `
@@ -342,6 +358,17 @@
 
         quizContent.innerHTML = html;
 
+        // Use requestAnimationFrame to ensure DOM is fully updated before enabling scroll
+        requestAnimationFrame(() => {
+            // Ensure quiz view is scrollable after content is rendered
+            if (quizView) {
+                quizView.style.overflowY = 'auto';
+                quizView.scrollTop = 0;
+                // Force a reflow to ensure browser recalculates scrollable area
+                quizView.offsetHeight;
+            }
+        });
+
         // Attach restart button listener
         const restartButton = quizContent.querySelector('.restart-button');
         if (restartButton) {
@@ -356,7 +383,7 @@
     /**
      * Returns to AR view
      */
-    function backToAR() {
+    async function backToAR() {
         console.log('Returning to AR view');
         
         // Hide quiz view
@@ -375,10 +402,31 @@
         currentQuestionIndex = 0;
         userAnswers = [];
 
-        // Show start button to allow restarting AR
+        // Show start button and trigger AR initialization
         const startButton = document.getElementById('start-button');
         if (startButton) {
             startButton.classList.remove('hidden');
+            startButton.disabled = false;
+            startButton.textContent = 'Start AR';
+            
+            // Programmatically trigger AR initialization
+            try {
+                if (window.ARController && window.ARController.init) {
+                    startButton.disabled = true;
+                    startButton.textContent = 'Starting...';
+                    await window.ARController.init();
+                } else {
+                    // Fallback: click the button programmatically
+                    startButton.click();
+                }
+            } catch (error) {
+                console.error('Error restarting AR:', error);
+                if (window.Toast) {
+                    window.Toast.error('Failed to restart AR. Please click "Start AR" manually.', 'AR Restart Failed', 5000);
+                }
+                startButton.disabled = false;
+                startButton.textContent = 'Start AR';
+            }
         }
     }
 

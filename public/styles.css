@@ -405,10 +405,14 @@ body {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     z-index: 1000;
     overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     display: flex;
     justify-content: center;
     align-items: flex-start;
     padding: 20px;
+    touch-action: pan-y;
+    overscroll-behavior: contain;
 }
 
 .quiz-view.hidden {
@@ -424,6 +428,9 @@ body {
     margin-top: 20px;
     margin-bottom: 20px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    position: relative;
+    touch-action: pan-y;
+    will-change: scroll-position;
 }
 
 /* Quiz Header */
@@ -549,6 +556,8 @@ body {
 /* Quiz Results */
 .quiz-results {
     text-align: center;
+    touch-action: pan-y;
+    overflow: visible;
 }
 
 .quiz-results h2 {
@@ -587,6 +596,8 @@ body {
 .results-breakdown {
     text-align: left;
     margin-top: 30px;
+    touch-action: pan-y;
+    overflow: visible;
 }
 
 .result-item {
