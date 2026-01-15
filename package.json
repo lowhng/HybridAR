@@ -1,7 +1,7 @@
 {
-  "name": "mindar-image-tracking",
+  "name": "webxr-ar-experience",
   "version": "1.0.0",
-  "description": "MindAR Image Tracking Web AR Application",
+  "description": "WebXR AR Experience with Interactive Quiz",
   "scripts": {
     "dev": "npx serve public",
     "build": "echo 'Static site - no build step required'"
@@ -9,7 +9,7 @@
   "keywords": [
     "ar",
     "augmented-reality",
-    "mindar",
+    "webxr",
     "three.js",
     "web-ar"
   ],

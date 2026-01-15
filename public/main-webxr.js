@@ -113,7 +113,7 @@ let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
-let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), 'mindar-cube', etc.
+let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), etc.
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -708,6 +708,10 @@ async function initWebXR() {
         });
 
         // Handle window resize
+        // Remove any existing listener first to avoid duplicates
+        if (window.removeEventListener && onWindowResize) {
+            window.removeEventListener('resize', onWindowResize);
+        }
         window.addEventListener('resize', onWindowResize);
         
         // Set up tap-to-place interaction
@@ -1551,26 +1555,94 @@ function exitARToQuiz() {
         return;
     }
 
+    console.log('Exiting AR to quiz - cleaning up all AR processes...');
+
     // Hide quiz button
     hideQuizButton();
 
+    // Stop render loop FIRST to prevent any further rendering
+    if (renderer) {
+        if (renderer.setAnimationLoop) {
+            renderer.setAnimationLoop(null);
+            console.log('Render loop stopped');
+        }
+        
+        // Disconnect renderer from XR session
+        if (renderer.xr && renderer.xr.isPresenting) {
+            try {
+                renderer.xr.setSession(null);
+                console.log('Renderer disconnected from XR session');
+            } catch (e) {
+                console.warn('Error disconnecting renderer:', e);
+            }
+        }
+        
+        // Hide canvas to stop any rendering
+        const canvas = renderer.domElement;
+        if (canvas) {
+            canvas.style.display = 'none';
+            canvas.style.visibility = 'hidden';
+            console.log('Canvas hidden');
+        }
+    }
+
+    // Clean up hit-test source
+    if (xrHitTestSource) {
+        try {
+            xrHitTestSource.cancel();
+            xrHitTestSource = null;
+            console.log('Hit-test source cancelled');
+        } catch (e) {
+            console.warn('Error cancelling hit-test:', e);
+        }
+    }
+
     // End XR session
     if (xrSession) {
-        xrSession.end();
+        try {
+            xrSession.end();
+            console.log('XR session ended');
+        } catch (e) {
+            console.warn('Error ending XR session:', e);
+        }
         xrSession = null;
+        xrReferenceSpace = null;
     }
 
-    // Stop render loop
-    if (renderer && renderer.setAnimationLoop) {
-        renderer.setAnimationLoop(null);
+    // Reset gaze detection state
+    gazeTimer = 0;
+    isGazingAtModel = false;
+    lastGazeCheckTime = 0;
+    isAnchored = false;
+    currentSurfaceType = null;
+
+    // Remove window resize listener temporarily to reduce background processing
+    // We'll re-add it when AR restarts
+    if (window.removeEventListener && onWindowResize) {
+        window.removeEventListener('resize', onWindowResize);
+        console.log('Window resize listener removed');
     }
 
-    // Show quiz view
-    if (window.QuizSystem && window.QuizSystem.showQuiz) {
-        window.QuizSystem.showQuiz(currentModelType);
-    } else {
-        console.error('QuizSystem not available');
+    // Force garbage collection hint (browser may or may not honor this)
+    if (window.gc) {
+        try {
+            window.gc();
+        } catch (e) {
+            // Ignore if gc is not available
+        }
     }
+
+    console.log('AR cleanup complete - all processes stopped');
+
+    // Small delay to ensure cleanup is complete before showing quiz
+    setTimeout(() => {
+        // Show quiz view
+        if (window.QuizSystem && window.QuizSystem.showQuiz) {
+            window.QuizSystem.showQuiz(currentModelType);
+        } else {
+            console.error('QuizSystem not available');
+        }
+    }, 100);
 }
 
 // ============================================================================

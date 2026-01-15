@@ -145,8 +145,7 @@ async function detectARCapabilities() {
         platform,
         webxrSupported,
         // With Variant Launch, iOS gets a WebXR-capable viewer, so we always prefer WebXR
-        useWebXR: webxrSupported,
-        useMindAR: false
+        useWebXR: webxrSupported
     };
     
     console.log('AR Capabilities Detection:', {

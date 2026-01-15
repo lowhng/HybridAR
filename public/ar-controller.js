@@ -12,7 +12,6 @@ let capabilities = null;
 // ============================================================================
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
-// Note: cameraSelector is also declared in main-mindar.js, but in different scope
 
 // ============================================================================
 // INITIALIZATION
@@ -261,57 +260,6 @@ async function loadWebXR() {
 }
 
 // ============================================================================
-// LOAD MINDAR
-// ============================================================================
-
-async function loadMindAR() {
-    console.log('Loading MindAR implementation...');
-    
-    // Verify MindAR library is loaded
-    if (typeof MindARThree === 'undefined') {
-        throw new Error('MindAR library not loaded. Please ensure mindar-image-three.prod.js is loaded.');
-    }
-    
-    // Check if MindAR module is loaded
-    if (typeof window.MindARAR === 'undefined') {
-        // Load the MindAR script
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'main-mindar.js';
-            script.onload = async () => {
-                console.log('MindAR script loaded');
-                // Wait a bit for the module to be exported
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
-                if (typeof window.MindARAR === 'undefined') {
-                    reject(new Error('MindARAR module not exported. Check console for errors.'));
-                    return;
-                }
-                
-                try {
-                    await window.MindARAR.init();
-                    currentARSystem = 'mindar';
-                    resolve();
-                } catch (error) {
-                    reject(error);
-                }
-            };
-            script.onerror = () => {
-                reject(new Error('Failed to load MindAR implementation script'));
-            };
-            document.body.appendChild(script);
-        });
-    } else {
-        // Already loaded, just initialize
-        if (typeof window.MindARAR === 'undefined' || !window.MindARAR.init) {
-            throw new Error('MindARAR module not properly initialized. Please refresh the page.');
-        }
-        await window.MindARAR.init();
-        currentARSystem = 'mindar';
-    }
-}
-
-// ============================================================================
 // RESET FUNCTION
 // ============================================================================
 
@@ -326,9 +274,6 @@ function resetAR() {
             window.WebXRAR.reset();
             console.log('WebXR anchor reset');
         }
-    } else {
-        // MindAR doesn't need reset - it always tracks when target is visible
-        console.log('Reset not applicable for MindAR');
     }
 }
 

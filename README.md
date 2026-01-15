@@ -1,11 +1,12 @@
-# MindAR Image Tracking
+# WebXR AR Experience
 
-A web-based Augmented Reality application using MindAR and Three.js for image tracking.
+A web-based Augmented Reality application using WebXR and Three.js for immersive AR experiences.
 
 ## Features
 
-- Image target tracking using MindAR
-- 3D cube visualization with freeze/reposition functionality
+- WebXR immersive AR support (iOS via Variant Launch, Android via Chrome)
+- 3D model visualization with surface detection (walls and floors)
+- Interactive quiz system
 - Mobile-friendly interface
 - Real-time AR tracking
 
@@ -51,9 +52,9 @@ A web-based Augmented Reality application using MindAR and Three.js for image tr
 
 ## Important Notes
 
-- The `targets.mind` file must be generated using the [MindAR target creator](https://hiukim.github.io/mind-ar-js-doc/tools/compile)
 - The application requires HTTPS to access the camera (Vercel provides this automatically)
-- Make sure the `targets.mind` file is included in your repository
+- WebXR immersive-ar support is required (iOS uses Variant Launch SDK, Android uses Chrome)
+- 3D models (GLB files) are stored in the `assets` folder
 
 ## Local Development
 
@@ -75,10 +76,13 @@ npx serve public
 MindAR/
 ├── public/
 │   ├── assets/
-│   │   ├── targets.mind    # AR tracking target (required)
-│   │   └── cube.png       # Cube texture (optional)
+│   │   ├── wire.glb       # 3D model for wall surfaces
+│   │   ├── puddle.glb     # 3D model for floor surfaces
+│   │   └── wireori.glb    # Alternative wire model
 │   ├── index.html
-│   ├── main.js
+│   ├── main-webxr.js     # WebXR AR implementation
+│   ├── ar-controller.js  # AR system controller
+│   ├── quiz.js           # Quiz system
 │   └── styles.css
 ├── vercel.json
 ├── package.json
@@ -87,9 +91,10 @@ MindAR/
 
 ## Requirements
 
-- Modern browser with WebRTC support (for camera access)
+- Modern browser with WebXR support
+- iOS: Variant Launch viewer (SDK included)
+- Android: Chrome browser with WebXR support
 - HTTPS connection (required for camera access)
-- Image target file (`targets.mind`)
 
 
 
