@@ -114,6 +114,7 @@ let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
 let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), etc.
+let debugMode = false; // Debug mode state (controls reticle and console logging)
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -139,6 +140,17 @@ let lastGazeCheckTime = 0;
 const GAZE_THRESHOLD_MS = 2000; // 2 seconds
 const GAZE_ANGLE_THRESHOLD = Math.PI / 6; // 30 degrees (in radians)
 let raycaster = null; // Will be initialized after THREE is available
+
+// ============================================================================
+// AUTO-SPAWN STATE
+// ============================================================================
+let autoSpawnTimer = 0; // Time since AR session started (in milliseconds)
+let hasAutoSpawned = false; // Whether auto-spawn has occurred
+let autoSpawnTime = 0; // Random time between 3-5 seconds (in milliseconds)
+let autoSpawnDistance = 3.0; // Distance threshold in meters to determine if user is "too far"
+let spawnCooldown = 2000; // Cooldown time in milliseconds before allowing another spawn
+let lastSpawnAttemptTime = 0; // Timestamp of last spawn attempt
+let autoSpawnPosition = null; // Position where model was auto-spawned
 
 // ============================================================================
 // DOM ELEMENTS
@@ -183,7 +195,7 @@ function ensureOverlayRoot() {
         overlayRoot.appendChild(overlayUI);
         document.body.appendChild(overlayRoot);
         
-        console.log('Overlay root created');
+        debugLog('Overlay root created');
     } else {
         // Overlay exists, find or create UI container
         overlayUI = document.getElementById('xr-overlay-ui');
@@ -193,14 +205,14 @@ function ensureOverlayRoot() {
             overlayUI.style.pointerEvents = 'auto';
             overlayRoot.appendChild(overlayUI);
         }
-        console.log('Overlay root found');
+        debugLog('Overlay root found');
     }
     
     // Move reset button into overlay UI if it exists and isn't already there
     const resetButton = document.getElementById('reset-button');
     if (resetButton && resetButton.parentElement !== overlayUI) {
         overlayUI.appendChild(resetButton);
-        console.log('Reset button moved into overlay UI');
+        debugLog('Reset button moved into overlay UI');
     }
     
     // Move quiz button into overlay UI if it exists and isn't already there
@@ -232,6 +244,17 @@ async function initWebXR() {
     
     if (!arContainer) {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
+    }
+    
+    // Set up debug toggle event listener
+    const debugCheckbox = document.getElementById('debug-checkbox');
+    if (debugCheckbox) {
+        debugCheckbox.addEventListener('change', (e) => {
+            debugMode = e.target.checked;
+            console.log('Debug mode:', debugMode ? 'enabled' : 'disabled');
+        });
+        // Initialize debug mode from checkbox state
+        debugMode = debugCheckbox.checked;
     }
     
     // Create/ensure overlay root exists for DOM overlay support
@@ -282,7 +305,7 @@ async function initWebXR() {
         throw new Error(error);
     }
 
-    console.log('WebXR supported, initializing...');
+    debugLog('WebXR supported, initializing...');
     if (window.Toast) {
         window.Toast.info('WebXR is supported, starting initialization...', 'Initializing', 3000);
     }
@@ -311,7 +334,7 @@ async function initWebXR() {
     if (renderer.xr) {
         renderer.xr.enabled = true;
         // Don't set autoUpdate to false - iOS needs automatic updates
-        console.log('WebXR renderer configured');
+        debugLog('WebXR renderer configured');
     }
     
     // Set clear color with 0 alpha for transparency
@@ -341,7 +364,7 @@ async function initWebXR() {
     // This is especially important for iOS
     canvas.offsetHeight; // Trigger reflow
     
-    console.log('Canvas created and appended:', {
+    debugLog('Canvas created and appended:', {
         width: canvas.width,
         height: canvas.height,
         display: canvas.style.display,
@@ -428,8 +451,8 @@ async function initWebXR() {
 
     // Start WebXR session
     try {
-        console.log('Requesting WebXR session...');
-        console.log('Canvas ready:', {
+        debugLog('Requesting WebXR session...');
+        debugLog('Canvas ready:', {
             width: renderer.domElement.width,
             height: renderer.domElement.height,
             visible: renderer.domElement.style.visibility !== 'hidden'
@@ -439,7 +462,7 @@ async function initWebXR() {
         // This prevents the SDK from trying to process session requests before it's initialized
         const platform = window.PlatformDetector?.detectPlatform?.() || { isIOS: false };
         if (platform.isIOS) {
-            console.log('iOS detected - waiting for Variant Launch SDK to be fully ready...');
+            debugLog('iOS detected - waiting for Variant Launch SDK to be fully ready...');
             await new Promise(resolve => setTimeout(resolve, 200));
         }
         
@@ -465,7 +488,7 @@ async function initWebXR() {
         // Always attempt DOM overlay for both iOS and Android
         // Use the dedicated overlay root element
         const platformName = platform.isIOS ? 'iOS' : platform.isAndroid ? 'Android' : 'Other';
-        console.log(`Requesting session with dom-overlay (platform: ${platformName})`);
+        debugLog(`Requesting session with dom-overlay (platform: ${platformName})`);
         
         let sessionOptionsToUse = {
             ...baseSessionOptions,
@@ -477,7 +500,7 @@ async function initWebXR() {
             throw new Error('Session options object is invalid');
         }
         
-        console.log('Requesting session with options:', sessionOptionsToUse);
+        debugLog('Requesting session with options:', sessionOptionsToUse);
         
         // Wrap in try-catch to provide better error messages
         let triedDomOverlay = true;
@@ -486,9 +509,9 @@ async function initWebXR() {
             
             // Check if dom-overlay is actually active
             if (xrSession.enabledFeatures && xrSession.enabledFeatures.includes('dom-overlay')) {
-                console.log('DOM overlay active; HTML UI should be visible');
+                debugLog('DOM overlay active; HTML UI should be visible');
             } else {
-                console.log('DOM overlay requested but not enabled in session');
+                debugLog('DOM overlay requested but not enabled in session');
             }
         } catch (sessionError) {
             // If dom-overlay caused the failure, retry once without it
@@ -503,7 +526,7 @@ async function initWebXR() {
                     ...baseSessionOptions,
                     optionalFeatures: baseSessionOptions.optionalFeatures.filter(f => f !== 'dom-overlay')
                 };
-                console.log('Retrying session with options:', fallbackOptions);
+                debugLog('Retrying session with options:', fallbackOptions);
                 try {
                     xrSession = await navigator.xr.requestSession('immersive-ar', fallbackOptions);
                     console.warn('Session started without DOM overlay - HTML UI may not be visible in AR');
@@ -534,9 +557,16 @@ async function initWebXR() {
             }
         }
 
-        console.log('WebXR session started successfully');
-        console.log('Session features:', xrSession.enabledFeatures);
-        console.log('Session object:', xrSession);
+        debugLog('WebXR session started successfully');
+        debugLog('Session features:', xrSession.enabledFeatures);
+        debugLog('Session object:', xrSession);
+        
+        // Initialize auto-spawn state
+        autoSpawnTimer = 0;
+        hasAutoSpawned = false;
+        autoSpawnTime = (3000 + Math.random() * 2000); // Random time between 3-5 seconds
+        lastSpawnAttemptTime = 0;
+        autoSpawnPosition = null;
         
         if (window.Toast) {
             window.Toast.success('WebXR session started!', 'Session Active', 3000);
@@ -606,7 +636,7 @@ async function initWebXR() {
                 });
             }
             
-            console.log('Overlay event handlers attached to prevent XR select');
+            debugLog('Overlay event handlers attached to prevent XR select');
         }
         
         // CRITICAL for iOS: Ensure canvas is still visible before connecting renderer
@@ -619,12 +649,12 @@ async function initWebXR() {
         
         // Connect renderer to XR session
         await renderer.xr.setSession(xrSession);
-        console.log('Renderer connected to XR session');
+        debugLog('Renderer connected to XR session');
         
         // Force an immediate render to ensure camera feed appears
         // This is especially important for iOS
         renderer.render(scene, camera);
-        console.log('Initial render completed');
+        debugLog('Initial render completed');
         
         // Try different reference space types in order of preference
         const referenceSpaceTypes = ['local-floor', 'local', 'viewer'];
@@ -632,7 +662,7 @@ async function initWebXR() {
         for (const spaceType of referenceSpaceTypes) {
             try {
                 xrReferenceSpace = await xrSession.requestReferenceSpace(spaceType);
-                console.log(`Reference space obtained: ${spaceType}`);
+                debugLog(`Reference space obtained: ${spaceType}`);
                 break;
             } catch (e) {
                 console.warn(`Reference space '${spaceType}' not supported, trying next...`);
@@ -1043,6 +1073,20 @@ function createGreenBox() {
 // ============================================================================
 
 /**
+ * Checks if user is too far from the auto-spawned model
+ * @param {THREE.Vector3} userPosition - Current user/camera position
+ * @returns {boolean} True if user is too far from spawn location
+ */
+function checkUserDistanceFromSpawn(userPosition) {
+    if (!autoSpawnPosition || !userPosition) {
+        return false;
+    }
+    
+    const distance = userPosition.distanceTo(autoSpawnPosition);
+    return distance > autoSpawnDistance;
+}
+
+/**
  * Infers surface type based on camera gaze direction
  * Looking mostly horizontal = wall, looking down = floor
  * @returns {string} 'wall' or 'floor'
@@ -1272,12 +1316,12 @@ function onXRFrame(timestamp, frame) {
     
     // Log first few frames to confirm render loop is running (especially important for iOS debugging)
     if (frameCount === 1) {
-        console.log('WebXR render loop started - first frame rendered');
+        debugLog('WebXR render loop started - first frame rendered');
         if (window.Toast) {
             window.Toast.success('First frame rendered!', 'Render Loop Active', 2000);
         }
     } else if (frameCount <= 5 || frameCount % 300 === 0) {
-        console.log('WebXR render loop active - frame:', frameCount, 'hasFrame:', !!frame);
+        debugLog('WebXR render loop active - frame:', frameCount, 'hasFrame:', !!frame);
     }
     
     // CRITICAL: Always render even if we don't have a pose
@@ -1314,12 +1358,12 @@ function onXRFrame(timestamp, frame) {
                     
                     // Log surface type changes
                     if (surfaceType !== currentSurfaceType) {
-                        console.log('Surface type detected:', surfaceType);
+                        debugLog('Surface type detected:', surfaceType);
                     }
                     
                     updateReticleAppearance(surfaceType);
                     
-                    reticle.visible = true;
+                    reticle.visible = debugMode; // Only show reticle in debug mode
                     reticle.matrix.fromArray(hitPose.transform.matrix);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
                 }
@@ -1352,7 +1396,7 @@ function onXRFrame(timestamp, frame) {
             reticle.position.copy(position);
             reticle.position.addScaledVector(direction, 1.0);
             reticle.lookAt(position);
-            reticle.visible = true;
+            reticle.visible = debugMode; // Only show reticle in debug mode
             reticle.matrixAutoUpdate = true;
             
             // Infer surface type from gaze direction for reticle appearance
@@ -1362,6 +1406,120 @@ function onXRFrame(timestamp, frame) {
             // Update currentSurfaceType so tap handler knows what we're aiming at
             // But set it to null so tap handler uses inference instead of hit-test
             currentSurfaceType = null;
+        }
+    }
+
+    // Auto-spawn logic: spawn model after 3-5 seconds based on user gaze
+    if (!isAnchored && xrSession) {
+        const pose = frame.getViewerPose(xrReferenceSpace);
+        if (pose && pose.views && pose.views.length > 0) {
+            const view = pose.views[0];
+            const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
+            const cameraPosition = new THREE.Vector3();
+            const cameraDirection = new THREE.Vector3(0, 0, -1);
+            
+            cameraPosition.setFromMatrixPosition(matrix);
+            cameraDirection.applyMatrix4(matrix);
+            cameraDirection.sub(cameraPosition).normalize();
+            
+            // Update auto-spawn timer
+            if (autoSpawnTimer === 0) {
+                autoSpawnTimer = timestamp;
+            }
+            
+            const elapsedTime = timestamp - autoSpawnTimer;
+            
+            // Check if user is too far from previous spawn (if one exists)
+            const isTooFar = hasAutoSpawned && checkUserDistanceFromSpawn(cameraPosition);
+            const canSpawnAgain = isTooFar && (timestamp - lastSpawnAttemptTime > spawnCooldown);
+            
+            // Auto-spawn if:
+            // 1. Haven't spawned yet and time has elapsed (3-5 seconds)
+            // 2. OR user is too far from previous spawn and cooldown has passed
+            if ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) {
+                // Determine surface type from gaze direction
+                const inferredSurfaceType = inferSurfaceTypeFromGaze(cameraDirection);
+                
+                // Try to use hit-test if available, otherwise use inferred type
+                let spawnPosition = null;
+                let spawnSurfaceType = inferredSurfaceType;
+                
+                if (xrHitTestSource) {
+                    try {
+                        const hitTestResults = frame.getHitTestResults(xrHitTestSource);
+                        if (hitTestResults.length > 0) {
+                            const hit = hitTestResults[0];
+                            const hitPose = hit.getPose(xrReferenceSpace);
+                            if (hitPose) {
+                                spawnSurfaceType = detectSurfaceType(hitPose);
+                                const hitMatrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix);
+                                spawnPosition = new THREE.Vector3();
+                                spawnPosition.setFromMatrixPosition(hitMatrix);
+                            }
+                        }
+                    } catch (error) {
+                        console.warn('Hit-test error during auto-spawn:', error);
+                    }
+                }
+                
+                // If no hit-test result, place in front of camera
+                if (!spawnPosition) {
+                    const placementDistance = 1.0; // 1 meter
+                    spawnPosition = new THREE.Vector3();
+                    spawnPosition.copy(cameraPosition);
+                    spawnPosition.addScaledVector(cameraDirection, placementDistance);
+                    
+                    // Adjust vertical position based on surface type
+                    if (spawnSurfaceType === 'floor') {
+                        spawnPosition.y = cameraPosition.y - 1.0; // Assume ~1m below camera is floor
+                    }
+                }
+                
+                // Store spawn position for distance checking
+                autoSpawnPosition = spawnPosition.clone();
+                
+                // Create and place content
+                (async () => {
+                    try {
+                        await createContentForSurface(spawnSurfaceType);
+                        
+                        // Reset transforms before applying new ones
+                        contentGroup.position.set(0, 0, 0);
+                        contentGroup.rotation.set(0, 0, 0);
+                        contentGroup.scale.set(1, 1, 1);
+                        contentGroup.quaternion.set(0, 0, 0, 1);
+                        contentGroup.matrix.identity();
+                        
+                        // Position content at spawn location
+                        contentGroup.position.copy(spawnPosition);
+                        
+                        // For wall surfaces, rotate to face outward
+                        if (spawnSurfaceType === 'wall') {
+                            // Make model face camera direction
+                            contentGroup.lookAt(cameraPosition);
+                            // Rotate 90 degrees upward to face outward from wall
+                            const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
+                                new THREE.Vector3(1, 0, 0),
+                                -Math.PI / 2
+                            );
+                            contentGroup.quaternion.multiply(upwardRotation);
+                        } else {
+                            // For floor, just face camera
+                            contentGroup.lookAt(cameraPosition);
+                        }
+                        
+                        contentGroup.matrixAutoUpdate = true;
+                        contentGroup.visible = true;
+                        isAnchored = true;
+                        hasAutoSpawned = true;
+                        lastSpawnAttemptTime = timestamp;
+                        
+                        debugLog(`Auto-spawned ${spawnSurfaceType} model at position:`, spawnPosition);
+                    } catch (error) {
+                        console.error('Error during auto-spawn:', error);
+                    }
+                })();
+            }
         }
     }
 
@@ -1530,7 +1688,7 @@ function showQuizButton() {
         // Ensure button is in overlay UI for iOS WebXR
         if (overlayUI && quizButton.parentElement !== overlayUI) {
             overlayUI.appendChild(quizButton);
-            console.log('Quiz button moved to overlay UI');
+            debugLog('Quiz button moved to overlay UI');
         }
         quizButton.classList.remove('hidden');
     }
@@ -1639,22 +1797,29 @@ function resetAnchor() {
     isGazingAtModel = false;
     hideQuizButton();
     
+    // Reset auto-spawn state
+    autoSpawnTimer = 0;
+    hasAutoSpawned = false;
+    autoSpawnTime = (3000 + Math.random() * 2000); // Random time between 3-5 seconds
+    lastSpawnAttemptTime = 0;
+    autoSpawnPosition = null;
+    
     // Reset reticle state properly
     if (xrHitTestSource) {
         // When hit-test is available, use matrix updates from hit-test
         reticle.matrixAutoUpdate = false;
-        reticle.visible = true;
+        reticle.visible = debugMode; // Only show reticle in debug mode
         // Reset surface type so it will be detected again
         currentSurfaceType = null;
     } else {
         // When no hit-test, use position-based updates
         reticle.matrixAutoUpdate = true;
-        reticle.visible = true;
+        reticle.visible = debugMode; // Only show reticle in debug mode
         // Default to floor appearance
         updateReticleAppearance('floor');
     }
     
-    console.log('Anchor reset complete - isAnchored:', isAnchored, 'contentGroup.visible:', contentGroup ? contentGroup.visible : 'N/A');
+    debugLog('Anchor reset complete - isAnchored:', isAnchored, 'contentGroup.visible:', contentGroup ? contentGroup.visible : 'N/A');
 }
 
 // ============================================================================
@@ -1668,6 +1833,8 @@ if (typeof window !== 'undefined') {
         isAnchored: () => isAnchored,
         exitToQuiz: exitARToQuiz,
         getCurrentModelType: () => currentModelType,
+        debugMode: () => debugMode,
+        setDebugMode: (enabled) => { debugMode = enabled; },
         _scriptLoaded: true,
         _loaded: true,
         _loadTime: Date.now()

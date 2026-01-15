@@ -124,6 +124,12 @@
             }
         }
 
+        // Hide reset button when in quiz mode
+        const resetButton = document.getElementById('reset-button');
+        if (resetButton) {
+            resetButton.classList.add('hidden');
+        }
+
         // Show quiz view
         quizView.classList.remove('hidden');
 
@@ -429,6 +435,12 @@
                     startButton.disabled = true;
                     startButton.textContent = 'Starting...';
                     await window.ARController.init();
+                    
+                    // Show reset button after AR is initialized
+                    const resetButton = document.getElementById('reset-button');
+                    if (resetButton) {
+                        resetButton.classList.remove('hidden');
+                    }
                 } else {
                     // Fallback: click the button programmatically
                     startButton.click();
