@@ -8,48 +8,9 @@
     // QUIZ DATA
     // ============================================================================
     
-    const quizData = {
-        'wire-model': {
-            title: 'Wire Model Quiz',
-            questions: [
-                {
-                    question: 'What type of surface is the wire model designed for?',
-                    options: ['Wall', 'Floor', 'Ceiling', 'Any surface'],
-                    correct: 0
-                },
-                {
-                    question: 'What color does the reticle appear when detecting a wall?',
-                    options: ['Cyan', 'Orange', 'Green', 'Blue'],
-                    correct: 1
-                },
-                {
-                    question: 'How long do you need to gaze at the model to see the quiz button?',
-                    options: ['1 second', '2 seconds', '3 seconds', '5 seconds'],
-                    correct: 1
-                }
-            ]
-        },
-        'green-cube': {
-            title: 'Floor Model Quiz',
-            questions: [
-                {
-                    question: 'What type of surface is the puddle model designed for?',
-                    options: ['Wall', 'Floor', 'Ceiling', 'Any surface'],
-                    correct: 1
-                },
-                {
-                    question: 'What color does the reticle appear when detecting a floor?',
-                    options: ['Cyan', 'Orange', 'Green', 'Blue'],
-                    correct: 0
-                },
-                {
-                    question: 'What is the target size for the floor model?',
-                    options: ['30cm', '40cm', '50cm', '60cm'],
-                    correct: 2
-                }
-            ]
-        },
-    };
+    let quizData = null;
+    let quizDataLoaded = false;
+    let quizDataLoading = false;
 
     // ============================================================================
     // STATE
@@ -61,6 +22,50 @@
     let quizView = null;
     let quizContent = null;
     let backToARButton = null;
+
+    // ============================================================================
+    // DATA LOADING
+    // ============================================================================
+    
+    /**
+     * Loads quiz data from JSON file
+     * @returns {Promise<Object>} The quiz data object
+     */
+    async function loadQuizData() {
+        if (quizDataLoaded && quizData) {
+            return quizData;
+        }
+        
+        if (quizDataLoading) {
+            // Wait for existing load to complete
+            while (quizDataLoading) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            return quizData;
+        }
+        
+        quizDataLoading = true;
+        
+        try {
+            const response = await fetch('quiz-data.json');
+            if (!response.ok) {
+                throw new Error(`Failed to load quiz data: ${response.status} ${response.statusText}`);
+            }
+            quizData = await response.json();
+            quizDataLoaded = true;
+            console.log('Quiz data loaded successfully');
+            return quizData;
+        } catch (error) {
+            console.error('Error loading quiz data:', error);
+            if (window.Toast) {
+                window.Toast.error('Failed to load quiz data. Please refresh the page.', 'Quiz Data Error', 5000);
+            }
+            quizData = {}; // Set to empty object to prevent repeated failed attempts
+            throw error;
+        } finally {
+            quizDataLoading = false;
+        }
+    }
 
     // ============================================================================
     // DOM ELEMENTS
@@ -86,7 +91,7 @@
      * Shows the quiz for a given model type
      * @param {string} modelType - The type of model ('wire-model', 'green-cube')
      */
-    function showQuiz(modelType) {
+    async function showQuiz(modelType) {
         console.log('Showing quiz for model type:', modelType);
         
         if (!getDOMElements()) {
@@ -94,6 +99,14 @@
             if (window.Toast) {
                 window.Toast.error('Quiz UI elements not found. Please refresh the page.', 'Quiz Error', 5000);
             }
+            return;
+        }
+
+        // Load quiz data if not already loaded
+        try {
+            await loadQuizData();
+        } catch (error) {
+            console.error('Failed to load quiz data:', error);
             return;
         }
 

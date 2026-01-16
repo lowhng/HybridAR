@@ -1811,7 +1811,7 @@ function hideQuizButton() {
 /**
  * Exits AR and shows quiz view
  */
-function exitARToQuiz() {
+async function exitARToQuiz() {
     if (!currentModelType) {
         console.warn('No model type available for quiz');
         return;
@@ -1839,7 +1839,13 @@ function exitARToQuiz() {
 
     // Show quiz view using the stored model type
     if (window.QuizSystem && window.QuizSystem.showQuiz) {
-        window.QuizSystem.showQuiz(modelTypeForQuiz);
+        try {
+            await window.QuizSystem.showQuiz(modelTypeForQuiz);
+        } catch (error) {
+            console.error('Error showing quiz:', error);
+            // Reset flag if quiz failed to show
+            isExitingToQuiz = false;
+        }
     } else {
         console.error('QuizSystem not available');
         // Reset flag if quiz system is not available
