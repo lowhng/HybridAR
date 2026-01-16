@@ -1037,19 +1037,21 @@ async function createContentForSurface(surfaceType) {
             puddleModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
-                    // Ensure materials are not transparent and are visible
+                    // Make puddle dark and transparent to look like a water stain on carpet
                     if (child.material) {
                         if (Array.isArray(child.material)) {
                             child.material.forEach(mat => {
                                 if (mat) {
-                                    mat.transparent = false;
-                                    mat.opacity = 1.0;
+                                    mat.transparent = true;
+                                    mat.opacity = 0.4; // Semi-transparent for water stain effect
+                                    mat.color.setHex(0x2a2a2a); // Dark gray/brown color for water stain
                                     mat.visible = true;
                                 }
                             });
                         } else {
-                            child.material.transparent = false;
-                            child.material.opacity = 1.0;
+                            child.material.transparent = true;
+                            child.material.opacity = 0.4; // Semi-transparent for water stain effect
+                            child.material.color.setHex(0x2a2a2a); // Dark gray/brown color for water stain
                             child.material.visible = true;
                         }
                     }
