@@ -272,6 +272,16 @@ async function initWebXR() {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
     }
     
+    // Show AR container and canvas (in case they were hidden from previous session)
+    arContainer.style.display = 'block';
+    arContainer.style.visibility = 'visible';
+    const existingCanvas = arContainer.querySelector('canvas');
+    if (existingCanvas) {
+        existingCanvas.style.display = 'block';
+        existingCanvas.style.visibility = 'visible';
+        existingCanvas.style.opacity = '1';
+    }
+    
     // Set up debug toggle event listener
     const debugCheckbox = document.getElementById('debug-checkbox');
     if (debugCheckbox) {
@@ -2008,6 +2018,47 @@ function returnToStartScreen() {
             console.warn('Error ending session:', e);
         }
         xrSession = null;
+    }
+    
+    // Hide and clear the AR container and canvas
+    const arContainer = document.getElementById('ar-container');
+    if (arContainer) {
+        // Find and clear canvas BEFORE hiding it
+        const canvas = arContainer.querySelector('canvas');
+        if (canvas && renderer) {
+            try {
+                // Clear the canvas by rendering a blank black frame
+                // Use opaque black to ensure nothing shows through
+                renderer.setClearColor(0x000000, 1); // Black with full opacity
+                renderer.clear();
+                
+                // Render an empty scene to clear any remaining content
+                if (scene && camera) {
+                    renderer.render(scene, camera);
+                }
+                
+                // Also try direct canvas clearing as fallback
+                const ctx = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                if (ctx) {
+                    ctx.clear(ctx.COLOR_BUFFER_BIT | ctx.DEPTH_BUFFER_BIT);
+                }
+                
+                // Reset clear color back to transparent for next session
+                renderer.setClearColor(0x000000, 0);
+            } catch (e) {
+                console.warn('Error clearing canvas:', e);
+            }
+        }
+        
+        // Hide the container and canvas after clearing
+        arContainer.style.display = 'none';
+        arContainer.style.visibility = 'hidden';
+        
+        if (canvas) {
+            canvas.style.display = 'none';
+            canvas.style.visibility = 'hidden';
+            canvas.style.opacity = '0';
+        }
     }
     
     // Show start button and logo
