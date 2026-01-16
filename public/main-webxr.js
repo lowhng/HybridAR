@@ -233,6 +233,13 @@ function ensureOverlayRoot() {
         debugLog('Reset button moved into overlay UI');
     }
     
+    // Move close button into overlay UI if it exists and isn't already there
+    const closeButton = document.getElementById('close-button');
+    if (closeButton && closeButton.parentElement !== overlayUI) {
+        overlayUI.appendChild(closeButton);
+        debugLog('Close button moved into overlay UI');
+    }
+    
     // Move quiz button into overlay UI if it exists and isn't already there
     const quizButton = document.getElementById('quiz-button');
     if (quizButton && quizButton.parentElement !== overlayUI) {
@@ -277,6 +284,15 @@ async function initWebXR() {
     
     // Create/ensure overlay root exists for DOM overlay support
     ensureOverlayRoot();
+    
+    // Ensure close button is in overlay UI if it's visible (for iOS WebXR)
+    const closeButton = document.getElementById('close-button');
+    if (closeButton && !closeButton.classList.contains('hidden') && overlayUI) {
+        if (closeButton.parentElement !== overlayUI) {
+            overlayUI.appendChild(closeButton);
+            debugLog('Close button moved to overlay UI during init');
+        }
+    }
     
     if (typeof THREE === 'undefined') {
         throw new Error('THREE.js is not loaded. Please ensure Three.js is loaded before this script.');

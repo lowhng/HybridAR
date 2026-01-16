@@ -63,6 +63,12 @@ async function initializeAR() {
     }
     const closeButton = document.getElementById('close-button');
     if (closeButton) {
+        // Ensure close button is in overlay UI for iOS WebXR (if overlay exists)
+        const overlayUI = document.getElementById('xr-overlay-ui');
+        if (overlayUI && closeButton.parentElement !== overlayUI) {
+            overlayUI.appendChild(closeButton);
+            console.log('Close button moved to overlay UI');
+        }
         closeButton.classList.remove('hidden');
     }
     
