@@ -1451,75 +1451,98 @@ function onXRFrame(timestamp, frame) {
             // 1. Haven't spawned yet and time has elapsed (3-5 seconds)
             // 2. OR user is too far from previous spawn and cooldown has passed
             if ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) {
-                // Determine surface type from gaze direction
-                const inferredSurfaceType = inferSurfaceTypeFromGaze(cameraDirection);
+                // Use reticle position/orientation if available (even if invisible)
+                // This ensures correct orientation matching tap-to-place behavior
+                let useReticle = false;
+                let spawnSurfaceType = null;
                 
-                // Try to use hit-test if available, otherwise use inferred type
-                let spawnPosition = null;
-                let spawnSurfaceType = inferredSurfaceType;
-                
-                if (xrHitTestSource) {
-                    try {
-                        const hitTestResults = frame.getHitTestResults(xrHitTestSource);
-                        if (hitTestResults.length > 0) {
-                            const hit = hitTestResults[0];
-                            const hitPose = hit.getPose(xrReferenceSpace);
-                            if (hitPose) {
-                                spawnSurfaceType = detectSurfaceType(hitPose);
-                                const hitMatrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix);
-                                spawnPosition = new THREE.Vector3();
-                                spawnPosition.setFromMatrixPosition(hitMatrix);
-                            }
-                        }
-                    } catch (error) {
-                        console.warn('Hit-test error during auto-spawn:', error);
+                // Check if reticle has valid matrix (it's updated even when invisible)
+                if (reticle && reticle.matrix && currentSurfaceType) {
+                    // Verify reticle matrix is not identity (has been set by hit-test)
+                    const reticlePos = new THREE.Vector3();
+                    reticlePos.setFromMatrixPosition(reticle.matrix);
+                    // If reticle position is not at origin, it's been set by hit-test
+                    if (reticlePos.lengthSq() > 0.01) {
+                        useReticle = true;
+                        spawnSurfaceType = currentSurfaceType;
                     }
                 }
                 
-                // If no hit-test result, place in front of camera
-                if (!spawnPosition) {
-                    const placementDistance = 1.0; // 1 meter
-                    spawnPosition = new THREE.Vector3();
-                    spawnPosition.copy(cameraPosition);
-                    spawnPosition.addScaledVector(cameraDirection, placementDistance);
-                    
-                    // Adjust vertical position based on surface type
-                    if (spawnSurfaceType === 'floor') {
-                        spawnPosition.y = cameraPosition.y - 1.0; // Assume ~1m below camera is floor
-                    }
+                // Fallback: determine surface type from gaze direction
+                if (!spawnSurfaceType) {
+                    spawnSurfaceType = inferSurfaceTypeFromGaze(cameraDirection);
                 }
                 
-                // Store spawn position for distance checking
-                autoSpawnPosition = spawnPosition.clone();
-                
-                // Create and place content
+                // Create and place content using reticle matrix (like tap-to-place)
                 (async () => {
                     try {
                         await createContentForSurface(spawnSurfaceType);
                         
-                        // Reset transforms before applying new ones
+                        // CRITICAL: Reset all transforms before applying new ones
+                        // This ensures each spawn starts fresh and doesn't retain previous rotation
                         contentGroup.position.set(0, 0, 0);
                         contentGroup.rotation.set(0, 0, 0);
                         contentGroup.scale.set(1, 1, 1);
                         contentGroup.quaternion.set(0, 0, 0, 1);
                         contentGroup.matrix.identity();
                         
-                        // Position content at spawn location
-                        contentGroup.position.copy(spawnPosition);
-                        
-                        // For wall surfaces, rotate to face outward
-                        if (spawnSurfaceType === 'wall') {
-                            // Make model face camera direction
-                            contentGroup.lookAt(cameraPosition);
-                            // Rotate 90 degrees upward to face outward from wall
-                            const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
-                                new THREE.Vector3(1, 0, 0),
-                                -Math.PI / 2
-                            );
-                            contentGroup.quaternion.multiply(upwardRotation);
+                        if (useReticle && reticle && reticle.matrix) {
+                            // Use reticle matrix directly (same as tap-to-place)
+                            // This ensures perfect alignment with the detected surface
+                            contentGroup.matrix.copy(reticle.matrix);
+                            
+                            // Extract position and rotation from the matrix
+                            contentGroup.position.setFromMatrixPosition(reticle.matrix);
+                            
+                            // Extract quaternion from reticle matrix to ensure exact same orientation
+                            const reticleQuaternion = new THREE.Quaternion();
+                            reticleQuaternion.setFromRotationMatrix(reticle.matrix);
+                            contentGroup.quaternion.copy(reticleQuaternion);
+                            
+                            // For wall surfaces, rotate the content 90 degrees upward to face outward from the wall
+                            if (spawnSurfaceType === 'wall') {
+                                const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
+                                    new THREE.Vector3(1, 0, 0),
+                                    -Math.PI / 2
+                                );
+                                // apply AFTER current orientation (local space)
+                                contentGroup.quaternion.multiply(upwardRotation);
+                            }
+                            
+                            // Store spawn position for distance checking
+                            autoSpawnPosition = contentGroup.position.clone();
                         } else {
-                            // For floor, just face camera
-                            contentGroup.lookAt(cameraPosition);
+                            // Fallback: place in front of camera (no hit-test available)
+                            const placementDistance = 1.0; // 1 meter
+                            const spawnPosition = new THREE.Vector3();
+                            spawnPosition.copy(cameraPosition);
+                            spawnPosition.addScaledVector(cameraDirection, placementDistance);
+                            
+                            // Adjust vertical position based on surface type
+                            if (spawnSurfaceType === 'floor') {
+                                spawnPosition.y = cameraPosition.y - 1.0; // Assume ~1m below camera is floor
+                            }
+                            
+                            // Position content at spawn location
+                            contentGroup.position.copy(spawnPosition);
+                            
+                            // For wall surfaces, rotate to face outward
+                            if (spawnSurfaceType === 'wall') {
+                                // Make model face camera direction
+                                contentGroup.lookAt(cameraPosition);
+                                // Rotate 90 degrees upward to face outward from wall
+                                const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
+                                    new THREE.Vector3(1, 0, 0),
+                                    -Math.PI / 2
+                                );
+                                contentGroup.quaternion.multiply(upwardRotation);
+                            } else {
+                                // For floor, just face camera
+                                contentGroup.lookAt(cameraPosition);
+                            }
+                            
+                            // Store spawn position for distance checking
+                            autoSpawnPosition = spawnPosition.clone();
                         }
                         
                         contentGroup.matrixAutoUpdate = true;
@@ -1528,7 +1551,7 @@ function onXRFrame(timestamp, frame) {
                         hasAutoSpawned = true;
                         lastSpawnAttemptTime = timestamp;
                         
-                        debugLog(`Auto-spawned ${spawnSurfaceType} model at position:`, spawnPosition);
+                        debugLog(`Auto-spawned ${spawnSurfaceType} model using ${useReticle ? 'reticle' : 'fallback'} placement`);
                     } catch (error) {
                         console.error('Error during auto-spawn:', error);
                     }
