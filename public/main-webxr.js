@@ -1854,6 +1854,140 @@ async function exitARToQuiz() {
 }
 
 // ============================================================================
+// CLEANUP & RESOURCE MANAGEMENT
+// ============================================================================
+
+/**
+ * Comprehensive cleanup function to dispose of all resources and reset state
+ * This prevents memory leaks and ensures a clean state when closing AR
+ */
+function cleanupARResources() {
+    console.log('Cleaning up AR resources...');
+    
+    // Stop render loop first
+    if (renderer && renderer.setAnimationLoop) {
+        renderer.setAnimationLoop(null);
+    }
+    
+    // Clean up content group and all spawned objects
+    if (contentGroup) {
+        contentGroup.visible = false;
+        
+        // Reset transform
+        contentGroup.position.set(0, 0, 0);
+        contentGroup.rotation.set(0, 0, 0);
+        contentGroup.scale.set(1, 1, 1);
+        contentGroup.matrix.identity();
+        contentGroup.matrixAutoUpdate = true;
+        
+        // Dispose all children and their resources
+        while (contentGroup.children.length > 0) {
+            const child = contentGroup.children[0];
+            contentGroup.remove(child);
+            
+            // Dispose geometry
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            
+            // Dispose material(s)
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => {
+                        if (mat) mat.dispose();
+                    });
+                } else {
+                    child.material.dispose();
+                }
+            }
+            
+            // Traverse and dispose all nested objects
+            if (child.traverse) {
+                child.traverse((obj) => {
+                    if (obj.geometry) {
+                        obj.geometry.dispose();
+                    }
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) {
+                            obj.material.forEach(mat => {
+                                if (mat) mat.dispose();
+                            });
+                        } else {
+                            obj.material.dispose();
+                        }
+                    }
+                    // Dispose textures if they exist
+                    if (obj.material && obj.material.map) {
+                        obj.material.map.dispose();
+                    }
+                    if (obj.material && obj.material.normalMap) {
+                        obj.material.normalMap.dispose();
+                    }
+                    if (obj.material && obj.material.emissiveMap) {
+                        obj.material.emissiveMap.dispose();
+                    }
+                });
+            }
+            
+            // Call dispose if available
+            if (child.dispose && typeof child.dispose === 'function') {
+                try {
+                    child.dispose();
+                } catch (e) {
+                    console.warn('Error disposing child:', e);
+                }
+            }
+        }
+        
+        console.log('Content group cleaned up');
+    }
+    
+    // Clean up reticle
+    if (reticle) {
+        reticle.visible = false;
+        reticle.position.set(0, 0, 0);
+        reticle.rotation.set(0, 0, 0);
+        reticle.scale.set(1, 1, 1);
+        reticle.matrix.identity();
+    }
+    
+    // Reset model references (these are clones, so they're already disposed above)
+    cubeMesh = null;
+    wireModel = null;
+    puddleModel = null;
+    
+    // Reset all state variables
+    isAnchored = false;
+    placedSurfaceType = null;
+    currentSurfaceType = null;
+    currentModelType = null;
+    isExitingToQuiz = false;
+    
+    // Reset gaze detection
+    gazeTimer = 0;
+    isGazingAtModel = false;
+    lastGazeCheckTime = 0;
+    
+    // Reset auto-spawn state
+    autoSpawnTimer = 0;
+    hasAutoSpawned = false;
+    autoSpawnTime = 0;
+    lastSpawnAttemptTime = 0;
+    autoSpawnPosition = null;
+    surfaceDetectionTime = 0;
+    lastReticlePosition = null;
+    
+    // Reset animation time
+    animationTime = 0;
+    
+    // Clean up XR resources
+    xrHitTestSource = null;
+    xrReferenceSpace = null;
+    
+    console.log('AR resources cleaned up');
+}
+
+// ============================================================================
 // RETURN TO START SCREEN
 // ============================================================================
 
@@ -1863,10 +1997,8 @@ async function exitARToQuiz() {
 function returnToStartScreen() {
     console.log('Returning to start screen...');
     
-    // Stop render loop
-    if (renderer && renderer.setAnimationLoop) {
-        renderer.setAnimationLoop(null);
-    }
+    // Comprehensive cleanup of all AR resources
+    cleanupARResources();
     
     // End XR session if still active
     if (xrSession) {
@@ -1877,15 +2009,6 @@ function returnToStartScreen() {
         }
         xrSession = null;
     }
-    
-    // Reset state
-    xrHitTestSource = null;
-    isAnchored = false;
-    hasAutoSpawned = false;
-    autoSpawnTimer = 0;
-    currentSurfaceType = null;
-    currentModelType = null;
-    isExitingToQuiz = false; // Reset flag
     
     // Show start button and logo
     const startButton = document.getElementById('start-button');
@@ -1941,31 +2064,63 @@ function resetAnchor() {
             contentGroup.matrix.identity();
             contentGroup.matrixAutoUpdate = true;
         
-        // Clear all children
+        // Clear all children with proper resource disposal
         while (contentGroup.children.length > 0) {
             const child = contentGroup.children[0];
             contentGroup.remove(child);
-            if (child.geometry) child.geometry.dispose();
+            
+            // Dispose geometry
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            
+            // Dispose material(s)
             if (child.material) {
                 if (Array.isArray(child.material)) {
-                    child.material.forEach(mat => mat.dispose());
+                    child.material.forEach(mat => {
+                        if (mat) mat.dispose();
+                    });
                 } else {
                     child.material.dispose();
                 }
             }
+            
+            // Traverse and dispose all nested objects including textures
             if (child.traverse) {
                 child.traverse((obj) => {
-                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.geometry) {
+                        obj.geometry.dispose();
+                    }
                     if (obj.material) {
                         if (Array.isArray(obj.material)) {
-                            obj.material.forEach(mat => mat.dispose());
+                            obj.material.forEach(mat => {
+                                if (mat) mat.dispose();
+                            });
                         } else {
                             obj.material.dispose();
                         }
                     }
+                    // Dispose textures if they exist
+                    if (obj.material && obj.material.map) {
+                        obj.material.map.dispose();
+                    }
+                    if (obj.material && obj.material.normalMap) {
+                        obj.material.normalMap.dispose();
+                    }
+                    if (obj.material && obj.material.emissiveMap) {
+                        obj.material.emissiveMap.dispose();
+                    }
                 });
             }
-            if (child.dispose) child.dispose();
+            
+            // Call dispose if available
+            if (child.dispose && typeof child.dispose === 'function') {
+                try {
+                    child.dispose();
+                } catch (e) {
+                    console.warn('Error disposing child:', e);
+                }
+            }
         }
         
         console.log('Content group cleared and position reset');
