@@ -128,6 +128,7 @@ let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
 let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), etc.
+let isExitingToQuiz = false; // Flag to prevent returnToStartScreen when exiting to quiz
 // debugMode is defined at the top of the file to ensure it's always available
 
 // ============================================================================
@@ -743,7 +744,11 @@ async function initWebXR() {
             xrSession = null;
             xrHitTestSource = null;
             isAnchored = false;
-            returnToStartScreen();
+            // Only return to start screen if we're not exiting to quiz
+            // (exitARToQuiz handles its own UI transitions)
+            if (!isExitingToQuiz) {
+                returnToStartScreen();
+            }
         });
 
         // Set up render loop - Three.js handles XR rendering automatically
@@ -1812,6 +1817,12 @@ function exitARToQuiz() {
         return;
     }
 
+    // Store model type before ending session (session end event will reset it)
+    const modelTypeForQuiz = currentModelType;
+
+    // Set flag to prevent returnToStartScreen from being called
+    isExitingToQuiz = true;
+
     // Hide quiz button
     hideQuizButton();
 
@@ -1826,11 +1837,13 @@ function exitARToQuiz() {
         renderer.setAnimationLoop(null);
     }
 
-    // Show quiz view
+    // Show quiz view using the stored model type
     if (window.QuizSystem && window.QuizSystem.showQuiz) {
-        window.QuizSystem.showQuiz(currentModelType);
+        window.QuizSystem.showQuiz(modelTypeForQuiz);
     } else {
         console.error('QuizSystem not available');
+        // Reset flag if quiz system is not available
+        isExitingToQuiz = false;
     }
 }
 
@@ -1866,6 +1879,7 @@ function returnToStartScreen() {
     autoSpawnTimer = 0;
     currentSurfaceType = null;
     currentModelType = null;
+    isExitingToQuiz = false; // Reset flag
     
     // Show start button and logo
     const startButton = document.getElementById('start-button');
