@@ -1034,26 +1034,29 @@ async function createContentForSurface(surfaceType) {
             
             // Make sure model is visible and materials are properly set
             puddleModel.visible = true;
+            
+            // Create dark transparent water stain material (create once, clone for each mesh)
+            const darkWaterStainMaterial = new THREE.MeshStandardMaterial({
+                color: 0x2a2a2a, // Dark gray/brown for water stain
+                transparent: true,
+                opacity: 0.4, // Semi-transparent to show carpet through
+                emissive: 0x000000, // No glow
+                emissiveIntensity: 0,
+                roughness: 0.8, // Slightly rough for realistic water stain
+                metalness: 0.0 // Not metallic
+            });
+            
             puddleModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
-                    // Make puddle dark and transparent to look like a water stain on carpet
-                    if (child.material) {
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(mat => {
-                                if (mat) {
-                                    mat.transparent = true;
-                                    mat.opacity = 0.4; // Semi-transparent for water stain effect
-                                    mat.color.setHex(0x2a2a2a); // Dark gray/brown color for water stain
-                                    mat.visible = true;
-                                }
-                            });
-                        } else {
-                            child.material.transparent = true;
-                            child.material.opacity = 0.4; // Semi-transparent for water stain effect
-                            child.material.color.setHex(0x2a2a2a); // Dark gray/brown color for water stain
-                            child.material.visible = true;
-                        }
+                    // Replace material with dark transparent water stain material
+                    // This ensures the dark color is applied regardless of original material properties
+                    if (Array.isArray(child.material)) {
+                        // Replace all materials in array with dark water stain material
+                        child.material = child.material.map(() => darkWaterStainMaterial.clone());
+                    } else {
+                        // Replace single material
+                        child.material = darkWaterStainMaterial.clone();
                     }
                 }
             });
