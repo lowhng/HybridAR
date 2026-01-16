@@ -1034,29 +1034,24 @@ async function createContentForSurface(surfaceType) {
             
             // Make sure model is visible and materials are properly set
             puddleModel.visible = true;
-            
-            // Create dark transparent water stain material (create once, clone for each mesh)
-            const darkWaterStainMaterial = new THREE.MeshStandardMaterial({
-                color: 0x2a2a2a, // Dark gray/brown for water stain
-                transparent: true,
-                opacity: 0.4, // Semi-transparent to show carpet through
-                emissive: 0x000000, // No glow
-                emissiveIntensity: 0,
-                roughness: 0.8, // Slightly rough for realistic water stain
-                metalness: 0.0 // Not metallic
-            });
-            
             puddleModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
-                    // Replace material with dark transparent water stain material
-                    // This ensures the dark color is applied regardless of original material properties
-                    if (Array.isArray(child.material)) {
-                        // Replace all materials in array with dark water stain material
-                        child.material = child.material.map(() => darkWaterStainMaterial.clone());
-                    } else {
-                        // Replace single material
-                        child.material = darkWaterStainMaterial.clone();
+                    // Ensure materials are not transparent and are visible
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(mat => {
+                                if (mat) {
+                                    mat.transparent = false;
+                                    mat.opacity = 1.0;
+                                    mat.visible = true;
+                                }
+                            });
+                        } else {
+                            child.material.transparent = false;
+                            child.material.opacity = 1.0;
+                            child.material.visible = true;
+                        }
                     }
                 }
             });
