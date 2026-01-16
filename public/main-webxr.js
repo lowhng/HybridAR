@@ -145,6 +145,7 @@ let reticleFloorGeometry; // Ring geometry for floor
 let reticleWallGeometry; // Crosshair geometry for wall
 let reticleMaterial; // Material that changes color
 let animationTime = 0;
+let lastAnimationTimestamp = 0; // For frame-rate independent animation
 
 // ============================================================================
 // GAZE DETECTION STATE
@@ -170,6 +171,16 @@ let surfaceDetectionTime = 0; // Timestamp when surface was first detected
 let lastReticlePosition = null; // Last reticle position for stability checking
 let surfaceStabilityDuration = 1500; // Minimum time (ms) surface must be stable before auto-spawn
 let reticleStabilityThreshold = 0.05; // Maximum position change (meters) to consider reticle stable
+
+// Performance optimization: Reusable vector/matrix objects to reduce allocations
+const _tempVector = new THREE.Vector3();
+const _tempVector2 = new THREE.Vector3();
+const _tempMatrix = new THREE.Matrix4();
+const _tempQuaternion = new THREE.Quaternion();
+
+// Position smoothing for initial placement (reduces jitter from noisy hit-test)
+const SMOOTHING_SAMPLES = 5; // Number of hit-test results to average
+let recentHitTestPoses = []; // Array to store recent hit-test poses for smoothing
 
 // ============================================================================
 // DOM ELEMENTS
@@ -1206,9 +1217,15 @@ function setupTapToPlace() {
                 contentGroup.quaternion.multiply(upwardRotation);
               }
             
+            // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+            // This prevents jitter from matrix/transform mismatches
+            contentGroup.updateMatrix();
+            
             contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
             isAnchored = true;
+            // Clear smoothing buffer after placement
+            recentHitTestPoses = [];
             console.log(`Content placed at detected surface (${currentSurfaceType})`);
             return;
         }
@@ -1254,6 +1271,10 @@ function setupTapToPlace() {
                 // Set position and make model face camera direction
                 contentGroup.position.copy(targetPosition);
                 contentGroup.lookAt(position); // Face towards camera
+                
+                // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+                contentGroup.updateMatrix();
+                
                 contentGroup.matrixAutoUpdate = true;
                 contentGroup.visible = true;
                 isAnchored = true;
@@ -1299,9 +1320,9 @@ function detectSurfaceType(hitPose) {
     // Also check the Y component directly as an alternative method
     const yComponent = Math.abs(upVector.y);
     
-    // Debug logging (can be removed later)
-    if (frameCount % 60 === 0) {
-        console.log('Surface detection - Y-axis:', 
+    // Debug logging (only in debug mode to reduce overhead)
+    if (debugMode && frameCount % 60 === 0) {
+        debugLog('Surface detection - Y-axis:', 
             `(${upVector.x.toFixed(2)}, ${upVector.y.toFixed(2)}, ${upVector.z.toFixed(2)})`, 
             'dot product:', dotProduct.toFixed(2), 
             'Y component:', yComponent.toFixed(2));
@@ -1416,28 +1437,64 @@ function onXRFrame(timestamp, frame) {
                     
                     updateReticleAppearance(surfaceType);
                     
+                    // Store hit-test pose for smoothing (only when not anchored, for initial placement)
+                    if (!isAnchored) {
+                        recentHitTestPoses.push({
+                            matrix: new Float32Array(hitPose.transform.matrix),
+                            timestamp: timestamp
+                        });
+                        // Keep only the most recent samples
+                        if (recentHitTestPoses.length > SMOOTHING_SAMPLES) {
+                            recentHitTestPoses.shift();
+                        }
+                    }
+                    
+                    // Use smoothed matrix if we have enough samples, otherwise use current
+                    let matrixToUse = hitPose.transform.matrix;
+                    if (!isAnchored && recentHitTestPoses.length >= 3) {
+                        // Average the recent poses for smoother placement (reuse temp objects)
+                        _tempVector.set(0, 0, 0);
+                        _tempMatrix.fromArray(recentHitTestPoses[recentHitTestPoses.length - 1].matrix);
+                        _tempQuaternion.setFromRotationMatrix(_tempMatrix); // Use latest rotation
+                        
+                        // Average positions from all samples
+                        for (let i = 0; i < recentHitTestPoses.length; i++) {
+                            _tempMatrix.fromArray(recentHitTestPoses[i].matrix);
+                            const posePos = _tempVector2;
+                            posePos.setFromMatrixPosition(_tempMatrix);
+                            _tempVector.add(posePos);
+                        }
+                        
+                        // Average position
+                        _tempVector.divideScalar(recentHitTestPoses.length);
+                        
+                        // Build smoothed matrix from averaged position and latest rotation
+                        _tempMatrix.makeRotationFromQuaternion(_tempQuaternion);
+                        _tempMatrix.setPosition(_tempVector);
+                        matrixToUse = _tempMatrix.elements;
+                    }
+                    
                     reticle.visible = debugMode; // Only show reticle in debug mode
-                    reticle.matrix.fromArray(hitPose.transform.matrix);
+                    reticle.matrix.fromArray(matrixToUse);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
                     
-                    // Track surface stability for auto-spawn
-                    const currentReticlePosition = new THREE.Vector3();
-                    currentReticlePosition.setFromMatrixPosition(reticle.matrix);
+                    // Track surface stability for auto-spawn (reuse temp vector to reduce allocations)
+                    _tempVector.setFromMatrixPosition(reticle.matrix);
                     
                     if (lastReticlePosition === null) {
                         // First detection of this surface
                         surfaceDetectionTime = timestamp;
-                        lastReticlePosition = currentReticlePosition.clone();
+                        lastReticlePosition = _tempVector.clone();
                     } else {
                         // Check if reticle position is stable (hasn't moved much)
-                        const positionChange = currentReticlePosition.distanceTo(lastReticlePosition);
+                        const positionChange = _tempVector.distanceTo(lastReticlePosition);
                         if (positionChange > reticleStabilityThreshold) {
                             // Position changed significantly - reset stability timer
                             surfaceDetectionTime = timestamp;
-                            lastReticlePosition = currentReticlePosition.clone();
+                            lastReticlePosition = _tempVector.clone();
                         } else {
                             // Position is stable - update last position but keep detection time
-                            lastReticlePosition = currentReticlePosition.clone();
+                            lastReticlePosition = _tempVector.clone();
                         }
                     }
                 }
@@ -1447,6 +1504,8 @@ function onXRFrame(timestamp, frame) {
                 // Reset stability tracking when no surface detected
                 surfaceDetectionTime = 0;
                 lastReticlePosition = null;
+                // Clear smoothing buffer when no surface detected
+                recentHitTestPoses = [];
             }
         } catch (error) {
             // Hit-test might fail occasionally, just hide reticle
@@ -1460,24 +1519,22 @@ function onXRFrame(timestamp, frame) {
         // Show a "tap anyway" reticle in front of camera
         const pose = frame.getViewerPose(xrReferenceSpace);
         if (pose && pose.views && pose.views.length > 0) {
-            const view = pose.views[0];
-            const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
-            const position = new THREE.Vector3();
-            const direction = new THREE.Vector3(0, 0, -1);
+        const view = pose.views[0];
+        _tempMatrix.fromArray(view.transform.matrix);
+        _tempVector.setFromMatrixPosition(_tempMatrix);
+        _tempVector2.set(0, 0, -1);
+        _tempVector2.applyMatrix4(_tempMatrix);
+        _tempVector2.sub(_tempVector).normalize();
             
-            position.setFromMatrixPosition(matrix);
-            direction.applyMatrix4(matrix);
-            direction.sub(position).normalize();
-            
-            // Position reticle 1m in front
-            reticle.position.copy(position);
-            reticle.position.addScaledVector(direction, 1.0);
-            reticle.lookAt(position);
+            // Position reticle 1m in front (reuse temp vectors)
+            reticle.position.copy(_tempVector);
+            reticle.position.addScaledVector(_tempVector2, 1.0);
+            reticle.lookAt(_tempVector);
             reticle.visible = debugMode; // Only show reticle in debug mode
             reticle.matrixAutoUpdate = true;
             
             // Infer surface type from gaze direction for reticle appearance
-            const inferredType = inferSurfaceTypeFromGaze(direction);
+            const inferredType = inferSurfaceTypeFromGaze(_tempVector2);
             updateReticleAppearance(inferredType);
             
             // Update currentSurfaceType so tap handler knows what we're aiming at
@@ -1486,6 +1543,8 @@ function onXRFrame(timestamp, frame) {
             // Reset stability tracking when using fallback reticle (no hit-test)
             surfaceDetectionTime = 0;
             lastReticlePosition = null;
+            // Clear smoothing buffer when using fallback
+            recentHitTestPoses = [];
         }
     }
 
@@ -1494,13 +1553,15 @@ function onXRFrame(timestamp, frame) {
         const pose = frame.getViewerPose(xrReferenceSpace);
         if (pose && pose.views && pose.views.length > 0) {
             const view = pose.views[0];
-            const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
-            const cameraPosition = new THREE.Vector3();
-            const cameraDirection = new THREE.Vector3(0, 0, -1);
+            _tempMatrix.fromArray(view.transform.matrix);
+            _tempVector.setFromMatrixPosition(_tempMatrix);
+            _tempVector2.set(0, 0, -1);
+            _tempVector2.applyMatrix4(_tempMatrix);
+            _tempVector2.sub(_tempVector).normalize();
             
-            cameraPosition.setFromMatrixPosition(matrix);
-            cameraDirection.applyMatrix4(matrix);
-            cameraDirection.sub(cameraPosition).normalize();
+            // Store in local vars for readability (these are just references to temp objects)
+            const cameraPosition = _tempVector;
+            const cameraDirection = _tempVector2;
             
             // Update auto-spawn timer
             if (autoSpawnTimer === 0) {
@@ -1533,10 +1594,10 @@ function onXRFrame(timestamp, frame) {
                 // Only use reticle if we have a detected surface (not fallback)
                 if (reticle && reticle.matrix && currentSurfaceType && lastReticlePosition !== null) {
                     // Verify reticle matrix is not identity (has been set by hit-test)
-                    const reticlePos = new THREE.Vector3();
-                    reticlePos.setFromMatrixPosition(reticle.matrix);
+                    // Reuse temp vector to reduce allocations
+                    _tempVector.setFromMatrixPosition(reticle.matrix);
                     // If reticle position is not at origin, it's been set by hit-test
-                    if (reticlePos.lengthSq() > 0.01) {
+                    if (_tempVector.lengthSq() > 0.01) {
                         useReticle = true;
                         spawnSurfaceType = currentSurfaceType;
                     }
@@ -1585,22 +1646,25 @@ function onXRFrame(timestamp, frame) {
                                 contentGroup.quaternion.multiply(upwardRotation);
                             }
                             
+                            // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+                            contentGroup.updateMatrix();
+                            
                             // Store spawn position for distance checking
                             autoSpawnPosition = contentGroup.position.clone();
                         } else {
                             // Fallback: place in front of camera (no hit-test available)
                             const placementDistance = 1.0; // 1 meter
-                            const spawnPosition = new THREE.Vector3();
-                            spawnPosition.copy(cameraPosition);
-                            spawnPosition.addScaledVector(cameraDirection, placementDistance);
+                            // Reuse temp vector for spawn position calculation
+                            _tempVector.copy(cameraPosition);
+                            _tempVector.addScaledVector(cameraDirection, placementDistance);
                             
                             // Adjust vertical position based on surface type
                             if (spawnSurfaceType === 'floor') {
-                                spawnPosition.y = cameraPosition.y - 1.0; // Assume ~1m below camera is floor
+                                _tempVector.y = cameraPosition.y - 1.0; // Assume ~1m below camera is floor
                             }
                             
                             // Position content at spawn location
-                            contentGroup.position.copy(spawnPosition);
+                            contentGroup.position.copy(_tempVector);
                             
                             // For wall surfaces, rotate to face outward
                             if (spawnSurfaceType === 'wall') {
@@ -1617,8 +1681,11 @@ function onXRFrame(timestamp, frame) {
                                 contentGroup.lookAt(cameraPosition);
                             }
                             
+                            // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+                            contentGroup.updateMatrix();
+                            
                             // Store spawn position for distance checking
-                            autoSpawnPosition = spawnPosition.clone();
+                            autoSpawnPosition = _tempVector.clone();
                         }
                         
                         contentGroup.matrixAutoUpdate = true;
@@ -1626,6 +1693,8 @@ function onXRFrame(timestamp, frame) {
                         isAnchored = true;
                         hasAutoSpawned = true;
                         lastSpawnAttemptTime = timestamp;
+                        // Clear smoothing buffer after placement
+                        recentHitTestPoses = [];
                         
                         debugLog(`Auto-spawned ${spawnSurfaceType} model using ${useReticle ? 'reticle' : 'fallback'} placement`);
                     } catch (error) {
@@ -1637,10 +1706,20 @@ function onXRFrame(timestamp, frame) {
     }
 
     // Animate the cube (only if it's a cube, not wire model or puddle model)
+    // Use frame-rate independent calculation for consistent animation speed
     if (cubeMesh && isAnchored) {
-        animationTime = timestamp * 0.001;
-        cubeMesh.rotation.y = animationTime;
-        cubeMesh.rotation.x = animationTime * 0.5;
+        // Calculate deltaTime for frame-rate independence
+        const deltaTime = lastAnimationTimestamp > 0 ? timestamp - lastAnimationTimestamp : 16.67; // Default to ~60fps
+        lastAnimationTimestamp = timestamp;
+        
+        // Use deltaTime for smooth rotation (normalize to 60fps)
+        // Original code used timestamp * 0.001, so we maintain similar speed
+        const rotationSpeed = (deltaTime / 16.67) * 0.001; // Scale to match original speed at 60fps
+        cubeMesh.rotation.y += rotationSpeed;
+        cubeMesh.rotation.x += rotationSpeed * 0.5;
+    } else if (!isAnchored) {
+        // Reset animation timestamp when not anchored
+        lastAnimationTimestamp = 0;
     }
     
     // Wire model and puddle model stay static (no rotation)
@@ -1690,31 +1769,37 @@ function checkGazeAtModel(frame) {
         }
 
         const view = pose.views[0];
-        const viewMatrix = new THREE.Matrix4().fromArray(view.transform.matrix);
+        _tempMatrix.fromArray(view.transform.matrix);
         
-        // Get camera position and forward direction
-        const cameraPosition = new THREE.Vector3();
-        const cameraForward = new THREE.Vector3(0, 0, -1);
-        cameraPosition.setFromMatrixPosition(viewMatrix);
-        cameraForward.applyMatrix4(viewMatrix);
-        cameraForward.sub(cameraPosition).normalize();
+        // Get camera position and forward direction (reuse temp vectors)
+        _tempVector.setFromMatrixPosition(_tempMatrix);
+        _tempVector2.set(0, 0, -1);
+        _tempVector2.applyMatrix4(_tempMatrix);
+        _tempVector2.sub(_tempVector).normalize();
+        
+        // Store references for readability
+        const cameraPosition = _tempVector.clone(); // Clone since we'll reuse _tempVector
+        const cameraForward = _tempVector2.clone(); // Clone since we'll reuse _tempVector2
 
         // Get model center position in world space
+        // Only update matrix world when needed (gaze detection requires accurate world position)
         contentGroup.updateMatrixWorld(true);
-        const modelCenter = new THREE.Vector3();
-        contentGroup.getWorldPosition(modelCenter);
+        // Reuse temp vector for model center
+        _tempVector.set(0, 0, 0); // Reset
+        contentGroup.getWorldPosition(_tempVector);
+        const modelCenter = _tempVector;
 
-        // Calculate direction from camera to model
-        const toModel = new THREE.Vector3();
-        toModel.subVectors(modelCenter, cameraPosition);
-        const distance = toModel.length();
+        // Calculate direction from camera to model (reuse temp vector)
+        _tempVector2.subVectors(modelCenter, cameraPosition);
+        const distance = _tempVector2.length();
         
         // Check if model is too far (optional - can adjust threshold)
         if (distance > 5.0) {
             return false;
         }
         
-        toModel.normalize();
+        _tempVector2.normalize();
+        const toModel = _tempVector2;
 
         // Calculate angle between camera forward and direction to model
         const angle = Math.acos(THREE.MathUtils.clamp(cameraForward.dot(toModel), -1, 1));
@@ -1986,9 +2071,12 @@ function cleanupARResources() {
     autoSpawnPosition = null;
     surfaceDetectionTime = 0;
     lastReticlePosition = null;
+    // Clear smoothing buffer
+    recentHitTestPoses = [];
     
     // Reset animation time
     animationTime = 0;
+    lastAnimationTimestamp = 0;
     
     // Clean up XR resources
     xrHitTestSource = null;
@@ -2196,6 +2284,8 @@ function resetAnchor() {
     autoSpawnPosition = null;
     surfaceDetectionTime = 0;
     lastReticlePosition = null;
+    // Clear smoothing buffer
+    recentHitTestPoses = [];
     
     // Reset reticle state properly
     if (xrHitTestSource) {
