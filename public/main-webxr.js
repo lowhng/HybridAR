@@ -165,6 +165,10 @@ let autoSpawnDistance = 3.0; // Distance threshold in meters to determine if use
 let spawnCooldown = 2000; // Cooldown time in milliseconds before allowing another spawn
 let lastSpawnAttemptTime = 0; // Timestamp of last spawn attempt
 let autoSpawnPosition = null; // Position where model was auto-spawned
+let surfaceDetectionTime = 0; // Timestamp when surface was first detected
+let lastReticlePosition = null; // Last reticle position for stability checking
+let surfaceStabilityDuration = 1500; // Minimum time (ms) surface must be stable before auto-spawn
+let reticleStabilityThreshold = 0.05; // Maximum position change (meters) to consider reticle stable
 
 // ============================================================================
 // DOM ELEMENTS
@@ -581,6 +585,8 @@ async function initWebXR() {
         autoSpawnTime = (3000 + Math.random() * 2000); // Random time between 3-5 seconds
         lastSpawnAttemptTime = 0;
         autoSpawnPosition = null;
+        surfaceDetectionTime = 0;
+        lastReticlePosition = null;
         
         if (window.Toast) {
             window.Toast.success('WebXR session started!', 'Session Active', 3000);
@@ -642,11 +648,9 @@ async function initWebXR() {
                 closeButton.addEventListener('touchstart', stopPropagation);
                 closeButton.addEventListener('pointerdown', stopPropagation);
                 
-                // Ensure close button ends session
+                // Close button returns to start screen
                 closeButton.addEventListener('click', () => {
-                    if (xrSession) {
-                        xrSession.end();
-                    }
+                    returnToStartScreen();
                 });
             }
             
@@ -723,6 +727,7 @@ async function initWebXR() {
             xrSession = null;
             xrHitTestSource = null;
             isAnchored = false;
+            returnToStartScreen();
         });
 
         // Set up render loop - Three.js handles XR rendering automatically
@@ -1373,6 +1378,9 @@ function onXRFrame(timestamp, frame) {
                     // Log surface type changes
                     if (surfaceType !== currentSurfaceType) {
                         debugLog('Surface type detected:', surfaceType);
+                        // Reset stability tracking when surface type changes
+                        surfaceDetectionTime = 0;
+                        lastReticlePosition = null;
                     }
                     
                     updateReticleAppearance(surfaceType);
@@ -1380,10 +1388,34 @@ function onXRFrame(timestamp, frame) {
                     reticle.visible = debugMode; // Only show reticle in debug mode
                     reticle.matrix.fromArray(hitPose.transform.matrix);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
+                    
+                    // Track surface stability for auto-spawn
+                    const currentReticlePosition = new THREE.Vector3();
+                    currentReticlePosition.setFromMatrixPosition(reticle.matrix);
+                    
+                    if (lastReticlePosition === null) {
+                        // First detection of this surface
+                        surfaceDetectionTime = timestamp;
+                        lastReticlePosition = currentReticlePosition.clone();
+                    } else {
+                        // Check if reticle position is stable (hasn't moved much)
+                        const positionChange = currentReticlePosition.distanceTo(lastReticlePosition);
+                        if (positionChange > reticleStabilityThreshold) {
+                            // Position changed significantly - reset stability timer
+                            surfaceDetectionTime = timestamp;
+                            lastReticlePosition = currentReticlePosition.clone();
+                        } else {
+                            // Position is stable - update last position but keep detection time
+                            lastReticlePosition = currentReticlePosition.clone();
+                        }
+                    }
                 }
             } else {
                 reticle.visible = false;
                 currentSurfaceType = null;
+                // Reset stability tracking when no surface detected
+                surfaceDetectionTime = 0;
+                lastReticlePosition = null;
             }
         } catch (error) {
             // Hit-test might fail occasionally, just hide reticle
@@ -1420,6 +1452,9 @@ function onXRFrame(timestamp, frame) {
             // Update currentSurfaceType so tap handler knows what we're aiming at
             // But set it to null so tap handler uses inference instead of hit-test
             currentSurfaceType = null;
+            // Reset stability tracking when using fallback reticle (no hit-test)
+            surfaceDetectionTime = 0;
+            lastReticlePosition = null;
         }
     }
 
@@ -1447,17 +1482,25 @@ function onXRFrame(timestamp, frame) {
             const isTooFar = hasAutoSpawned && checkUserDistanceFromSpawn(cameraPosition);
             const canSpawnAgain = isTooFar && (timestamp - lastSpawnAttemptTime > spawnCooldown);
             
+            // Check if surface is stable (detected and stable for required duration)
+            const surfaceStable = currentSurfaceType !== null && 
+                                 surfaceDetectionTime > 0 && 
+                                 (timestamp - surfaceDetectionTime) >= surfaceStabilityDuration;
+            
             // Auto-spawn if:
-            // 1. Haven't spawned yet and time has elapsed (3-5 seconds)
-            // 2. OR user is too far from previous spawn and cooldown has passed
-            if ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) {
+            // 1. Haven't spawned yet AND time has elapsed (3-5 seconds) AND surface is stable
+            // 2. OR user is too far from previous spawn and cooldown has passed AND surface is stable
+            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable;
+            
+            if (shouldSpawn) {
                 // Use reticle position/orientation if available (even if invisible)
                 // This ensures correct orientation matching tap-to-place behavior
                 let useReticle = false;
                 let spawnSurfaceType = null;
                 
                 // Check if reticle has valid matrix (it's updated even when invisible)
-                if (reticle && reticle.matrix && currentSurfaceType) {
+                // Only use reticle if we have a detected surface (not fallback)
+                if (reticle && reticle.matrix && currentSurfaceType && lastReticlePosition !== null) {
                     // Verify reticle matrix is not identity (has been set by hit-test)
                     const reticlePos = new THREE.Vector3();
                     reticlePos.setFromMatrixPosition(reticle.matrix);
@@ -1468,9 +1511,11 @@ function onXRFrame(timestamp, frame) {
                     }
                 }
                 
-                // Fallback: determine surface type from gaze direction
+                // Only spawn if we have a stable detected surface
                 if (!spawnSurfaceType) {
-                    spawnSurfaceType = inferSurfaceTypeFromGaze(cameraDirection);
+                    // If we don't have a stable surface, don't spawn (wait for stable detection)
+                    debugLog('Auto-spawn skipped: no stable surface detected');
+                    return; // Exit early - don't spawn
                 }
                 
                 // Create and place content using reticle matrix (like tap-to-place)
@@ -1774,6 +1819,73 @@ function exitARToQuiz() {
 }
 
 // ============================================================================
+// RETURN TO START SCREEN
+// ============================================================================
+
+/**
+ * Returns to the start screen by ending the AR session and showing the start button
+ */
+function returnToStartScreen() {
+    console.log('Returning to start screen...');
+    
+    // Stop render loop
+    if (renderer && renderer.setAnimationLoop) {
+        renderer.setAnimationLoop(null);
+    }
+    
+    // End XR session if still active
+    if (xrSession) {
+        try {
+            xrSession.end();
+        } catch (e) {
+            console.warn('Error ending session:', e);
+        }
+        xrSession = null;
+    }
+    
+    // Reset state
+    xrHitTestSource = null;
+    isAnchored = false;
+    hasAutoSpawned = false;
+    autoSpawnTimer = 0;
+    currentSurfaceType = null;
+    currentModelType = null;
+    
+    // Show start button and logo
+    const startButton = document.getElementById('start-button');
+    const logoContainer = document.getElementById('logo-container');
+    if (startButton) {
+        startButton.disabled = false;
+        startButton.textContent = 'Start AR';
+        startButton.classList.remove('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.remove('hidden');
+    }
+    
+    // Hide reset button and close button
+    const resetButton = document.getElementById('reset-button');
+    const closeButton = document.getElementById('close-button');
+    if (resetButton) {
+        resetButton.classList.add('hidden');
+    }
+    if (closeButton) {
+        closeButton.classList.add('hidden');
+    }
+    
+    // Hide quiz button
+    hideQuizButton();
+    
+    // Hide webxr instruction
+    const instruction = document.getElementById('webxr-instruction');
+    if (instruction) {
+        instruction.classList.add('hidden');
+    }
+    
+    console.log('Returned to start screen');
+}
+
+// ============================================================================
 // RESET ANCHOR
 // ============================================================================
 
@@ -1840,6 +1952,8 @@ function resetAnchor() {
     autoSpawnTime = (3000 + Math.random() * 2000); // Random time between 3-5 seconds
     lastSpawnAttemptTime = 0;
     autoSpawnPosition = null;
+    surfaceDetectionTime = 0;
+    lastReticlePosition = null;
     
     // Reset reticle state properly
     if (xrHitTestSource) {

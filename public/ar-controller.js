@@ -57,9 +57,13 @@ async function initializeAR() {
         logoContainer.classList.add('hidden');
     }
     
-    // Show reset button for WebXR
+    // Show reset button and close button for WebXR
     if (resetButton) {
         resetButton.classList.remove('hidden');
+    }
+    const closeButton = document.getElementById('close-button');
+    if (closeButton) {
+        closeButton.classList.remove('hidden');
     }
     
     try {
@@ -103,9 +107,13 @@ async function initializeAR() {
             logoContainer.classList.remove('hidden');
         }
         
-        // Hide reset button on error
+        // Hide reset button and close button on error
         if (resetButton) {
             resetButton.classList.add('hidden');
+        }
+        const closeButton = document.getElementById('close-button');
+        if (closeButton) {
+            closeButton.classList.add('hidden');
         }
         
         throw error;
