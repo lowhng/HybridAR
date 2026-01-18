@@ -146,9 +146,7 @@
         // Show quiz view
         quizView.classList.remove('hidden');
 
-        // Ensure quiz view is scrollable and reset scroll position
-        quizView.style.overflowY = 'auto';
-        quizView.style.overflowX = 'hidden';
+        // Reset scroll position
         quizView.scrollTop = 0;
 
         // Render first question
@@ -305,11 +303,6 @@
         });
 
         const score = Math.round((correctCount / totalQuestions) * 100);
-        
-        // Reset scroll position when showing results
-        if (quizView) {
-            quizView.scrollTop = 0;
-        }
 
         // Build results HTML
         let html = `
@@ -357,17 +350,10 @@
 
         quizContent.innerHTML = html;
 
-        // Ensure quiz view is scrollable after content is rendered
-        // Use double requestAnimationFrame to ensure DOM is fully updated on iOS
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (quizView) {
-                    quizView.scrollTop = 0;
-                    // Ensure scroll is enabled
-                    quizView.style.overflowY = 'auto';
-                }
-            });
-        });
+        // Reset scroll position after content is rendered
+        if (quizView) {
+            quizView.scrollTop = 0;
+        }
 
         // Attach restart button listener
         const restartButton = quizContent.querySelector('.restart-button');

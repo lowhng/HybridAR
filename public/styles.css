@@ -512,18 +512,15 @@ body {
     height: 100%;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     z-index: 1000;
-    overflow-y: auto;
+    overflow-y: scroll;
     overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
     display: flex;
     justify-content: center;
     align-items: flex-start;
     padding: 20px;
-    touch-action: pan-y;
     overscroll-behavior: contain;
-    /* Force hardware acceleration on iOS to prevent scroll freezing */
+    /* Force GPU layer without will-change which causes iOS issues */
     transform: translateZ(0);
-    -webkit-transform: translateZ(0);
 }
 
 .quiz-view.hidden {
@@ -540,10 +537,7 @@ body {
     margin-bottom: 20px;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
     position: relative;
-    touch-action: pan-y;
-    /* Ensure proper rendering on iOS */
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
+    /* Remove will-change and touch-action which cause iOS scroll issues */
 }
 
 /* Quiz Header */
@@ -669,8 +663,6 @@ body {
 /* Quiz Results */
 .quiz-results {
     text-align: center;
-    touch-action: pan-y;
-    overflow: visible;
 }
 
 .quiz-results h2 {
@@ -709,7 +701,6 @@ body {
 .results-breakdown {
     text-align: left;
     margin-top: 30px;
-    touch-action: pan-y;
 }
 
 .result-item {
@@ -780,14 +771,9 @@ body {
     border-radius: 12px;
     cursor: pointer;
     margin-top: 30px;
-    margin-bottom: 20px;
     transition: transform 0.2s, box-shadow 0.2s;
     touch-action: manipulation;
     min-height: 48px;
-    /* Prevent layout thrashing on iOS when scrolling to bottom */
-    transform: translateZ(0);
-    -webkit-transform: translateZ(0);
-    will-change: transform;
 }
 
 .back-to-ar-button:hover {
