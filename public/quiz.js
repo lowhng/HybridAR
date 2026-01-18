@@ -168,50 +168,31 @@
             resetButton.classList.add('hidden');
         }
 
-        // Fix iOS Safari scroll freeze: temporarily unlock body positioning
-        // iOS has issues with scrollable children when body is position:fixed + overflow:hidden
-        document.body.style.position = 'static';
-        document.body.style.overflow = 'hidden';
+        // COMPLETELY DIFFERENT APPROACH: Make body scrollable instead of nested fixed element
+        // This is more reliable on iOS Safari which has issues with nested fixed scrollable elements
+        
+        // Change body to be scrollable (not fixed)
+        document.body.style.position = 'relative';
+        document.body.style.overflow = 'auto';
+        document.body.style.height = 'auto';
+        document.body.style.minHeight = '100vh';
+        document.documentElement.style.height = 'auto';
+        document.documentElement.style.overflow = 'auto';
 
-        // Render first question BEFORE showing view (so content exists when scroll initializes)
+        // Render first question BEFORE showing view
         renderQuestion();
 
-        // Show quiz view (using visibility instead of display to keep in render tree)
+        // Show quiz view
         quizView.classList.remove('hidden');
         
-        // CRITICAL: Force multiple synchronous layout calculations
-        // iOS Safari needs these to properly calculate scrollable area
+        // Reset scroll to top of body
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+        
+        // Force layout calculation
         void quizView.offsetHeight;
-        void quizContent.offsetHeight;
-        void quizView.scrollHeight; // Force calculation of scroll height
-        void quizView.clientHeight; // Force calculation of client height
-        
-        // Reset scroll position
-        quizView.scrollTop = 0;
-
-        // CRITICAL FIX: Force iOS to initialize scroll by programmatically scrolling
-        // This must happen synchronously after showing the element
-        // iOS Safari won't initialize scroll until it's "used" at least once
-        const initScroll = () => {
-            // Temporarily scroll down 1px to wake up the compositor
-            quizView.scrollTop = 1;
-            // Force a reflow
-            void quizView.offsetHeight;
-            // Reset to top
-            quizView.scrollTop = 0;
-            // Force another reflow to ensure it's applied
-            void quizView.offsetHeight;
-        };
-        
-        // Run immediately
-        initScroll();
-        
-        // Also run after paint cycles to ensure it sticks
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                initScroll();
-            });
-        });
+        void document.body.offsetHeight;
 
         // Set up back button handler
         if (backToARButton) {
@@ -411,10 +392,13 @@
 
         quizContent.innerHTML = html;
 
-        // Reset scroll position after content is rendered
-        if (quizView) {
-            quizView.scrollTop = 0;
-        }
+        // Reset scroll position after content is rendered (using body scroll now)
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+        
+        // Force layout calculation
+        void document.body.offsetHeight;
 
         // Attach restart button listener
         const restartButton = quizContent.querySelector('.restart-button');
@@ -436,6 +420,15 @@
         // Restore body positioning for AR mode
         document.body.style.position = 'fixed';
         document.body.style.overflow = 'hidden';
+        document.body.style.height = '100%';
+        document.body.style.minHeight = '';
+        document.documentElement.style.height = '100%';
+        document.documentElement.style.overflow = 'hidden';
+        
+        // Reset scroll
+        window.scrollTo(0, 0);
+        document.body.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
         
         // Hide quiz view
         if (quizView) {
