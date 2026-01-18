@@ -150,19 +150,6 @@
         quizView.style.overflowY = 'auto';
         quizView.style.overflowX = 'hidden';
         quizView.scrollTop = 0;
-        
-        // Use will-change to optimize scrolling performance
-        quizView.style.willChange = 'scroll-position';
-        
-        // Force a reflow to ensure styles are applied
-        quizView.offsetHeight;
-        
-        // Use requestIdleCallback if available to defer non-critical work
-        if (window.requestIdleCallback) {
-            requestIdleCallback(() => {
-                // Any non-critical initialization can go here
-            });
-        }
 
         // Render first question
         renderQuestion();
@@ -319,22 +306,9 @@
 
         const score = Math.round((correctCount / totalQuestions) * 100);
         
-        // Reset scroll position when showing results and ensure scrollability
+        // Reset scroll position when showing results
         if (quizView) {
             quizView.scrollTop = 0;
-            quizView.style.overflowY = 'auto';
-            quizView.style.willChange = 'scroll-position';
-            // Force a reflow
-            quizView.offsetHeight;
-            
-            // Use requestAnimationFrame to ensure smooth scrolling
-            requestAnimationFrame(() => {
-                if (quizView) {
-                    // Ensure scroll is enabled after content is rendered
-                    quizView.style.overflowY = 'auto';
-                    quizView.scrollTop = 0;
-                }
-            });
         }
 
         // Build results HTML
@@ -383,23 +357,16 @@
 
         quizContent.innerHTML = html;
 
-        // Use requestAnimationFrame to ensure DOM is fully updated before enabling scroll
+        // Ensure quiz view is scrollable after content is rendered
+        // Use double requestAnimationFrame to ensure DOM is fully updated on iOS
         requestAnimationFrame(() => {
-            // Ensure quiz view is scrollable after content is rendered
-            if (quizView) {
-                quizView.style.overflowY = 'auto';
-                quizView.style.willChange = 'scroll-position';
-                quizView.scrollTop = 0;
-                // Force a reflow to ensure browser recalculates scrollable area
-                quizView.offsetHeight;
-                
-                // Remove will-change after a short delay to avoid keeping it active
-                setTimeout(() => {
-                    if (quizView) {
-                        quizView.style.willChange = 'auto';
-                    }
-                }, 1000);
-            }
+            requestAnimationFrame(() => {
+                if (quizView) {
+                    quizView.scrollTop = 0;
+                    // Ensure scroll is enabled
+                    quizView.style.overflowY = 'auto';
+                }
+            });
         });
 
         // Attach restart button listener

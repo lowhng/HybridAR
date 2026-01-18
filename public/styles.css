@@ -521,6 +521,9 @@ body {
     padding: 20px;
     touch-action: pan-y;
     overscroll-behavior: contain;
+    /* Force hardware acceleration on iOS to prevent scroll freezing */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
 }
 
 .quiz-view.hidden {
@@ -538,7 +541,9 @@ body {
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
     position: relative;
     touch-action: pan-y;
-    will-change: scroll-position;
+    /* Ensure proper rendering on iOS */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
 }
 
 /* Quiz Header */
@@ -705,7 +710,6 @@ body {
     text-align: left;
     margin-top: 30px;
     touch-action: pan-y;
-    overflow: visible;
 }
 
 .result-item {
@@ -776,9 +780,14 @@ body {
     border-radius: 12px;
     cursor: pointer;
     margin-top: 30px;
+    margin-bottom: 20px;
     transition: transform 0.2s, box-shadow 0.2s;
     touch-action: manipulation;
     min-height: 48px;
+    /* Prevent layout thrashing on iOS when scrolling to bottom */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    will-change: transform;
 }
 
 .back-to-ar-button:hover {
