@@ -28,33 +28,23 @@
     // ============================================================================
     
     /**
-     * Forces iOS Safari to properly composite a scrollable element.
-     * This fixes the freeze-on-first-scroll bug that occurs when body is position:fixed.
-     * The technique works by temporarily modifying transform to force a repaint.
+     * Forces iOS Safari to properly initialize scroll compositor.
+     * This fixes the freeze-on-first-scroll bug on iOS Safari.
      * @param {HTMLElement} element - The scrollable element to fix
      */
     function forceIOSRepaint(element) {
         if (!element) return;
         
-        // Method 1: Toggle a 3D transform to force GPU re-composition
-        const originalTransform = element.style.transform;
-        element.style.transform = 'translate3d(0, 0, 0)';
-        
         // Force a synchronous layout/reflow
         void element.offsetHeight;
         
-        // Use double RAF to ensure we're past the paint cycle
+        // Trigger a micro-scroll to wake up the scroll compositor
+        // This must happen after the element is visible and laid out
+        element.scrollTop = 0.5;
+        
+        // Use RAF to ensure scroll happens after paint
         requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                // Trigger a tiny scroll to "wake up" the scroll compositor
-                element.scrollTop = 1;
-                
-                requestAnimationFrame(() => {
-                    element.scrollTop = 0;
-                    // Restore original transform
-                    element.style.transform = originalTransform || 'translateZ(0)';
-                });
-            });
+            element.scrollTop = 0;
         });
     }
 
@@ -178,22 +168,50 @@
             resetButton.classList.add('hidden');
         }
 
-        // Show quiz view
-        quizView.classList.remove('hidden');
-
         // Fix iOS Safari scroll freeze: temporarily unlock body positioning
         // iOS has issues with scrollable children when body is position:fixed + overflow:hidden
         document.body.style.position = 'static';
         document.body.style.overflow = 'hidden';
 
+        // Render first question BEFORE showing view (so content exists when scroll initializes)
+        renderQuestion();
+
+        // Show quiz view (using visibility instead of display to keep in render tree)
+        quizView.classList.remove('hidden');
+        
+        // CRITICAL: Force multiple synchronous layout calculations
+        // iOS Safari needs these to properly calculate scrollable area
+        void quizView.offsetHeight;
+        void quizContent.offsetHeight;
+        void quizView.scrollHeight; // Force calculation of scroll height
+        void quizView.clientHeight; // Force calculation of client height
+        
         // Reset scroll position
         quizView.scrollTop = 0;
 
-        // Force iOS Safari to properly composite the scrollable view
-        forceIOSRepaint(quizView);
-
-        // Render first question
-        renderQuestion();
+        // CRITICAL FIX: Force iOS to initialize scroll by programmatically scrolling
+        // This must happen synchronously after showing the element
+        // iOS Safari won't initialize scroll until it's "used" at least once
+        const initScroll = () => {
+            // Temporarily scroll down 1px to wake up the compositor
+            quizView.scrollTop = 1;
+            // Force a reflow
+            void quizView.offsetHeight;
+            // Reset to top
+            quizView.scrollTop = 0;
+            // Force another reflow to ensure it's applied
+            void quizView.offsetHeight;
+        };
+        
+        // Run immediately
+        initScroll();
+        
+        // Also run after paint cycles to ensure it sticks
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                initScroll();
+            });
+        });
 
         // Set up back button handler
         if (backToARButton) {

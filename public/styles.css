@@ -519,12 +519,17 @@ body {
     align-items: flex-start;
     padding: 20px;
     overscroll-behavior: contain;
-    /* Force GPU layer without will-change which causes iOS issues */
-    transform: translateZ(0);
+    /* Force GPU layer - will be set dynamically to avoid conflicts */
+    transform: translate3d(0, 0, 0);
+    -webkit-transform: translate3d(0, 0, 0);
+    /* Ensure touch events work properly on iOS */
+    touch-action: pan-y;
 }
 
 .quiz-view.hidden {
-    display: none;
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
 }
 
 .quiz-container {
