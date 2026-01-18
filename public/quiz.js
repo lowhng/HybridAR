@@ -22,6 +22,7 @@
     let quizView = null;
     let quizContent = null;
     let backToARButton = null;
+    let quizScrollWrapper = null;
 
     // ============================================================================
     // iOS SCROLL FIX
@@ -100,8 +101,9 @@
         quizView = document.getElementById('quiz-view');
         quizContent = document.getElementById('quiz-content');
         backToARButton = document.getElementById('back-to-ar-button');
+        quizScrollWrapper = document.getElementById('quiz-scroll-wrapper');
         
-        if (!quizView || !quizContent) {
+        if (!quizView || !quizContent || !quizScrollWrapper) {
             console.error('Quiz DOM elements not found');
             return false;
         }
@@ -150,11 +152,10 @@
         currentQuestionIndex = 0;
         userAnswers = [];
 
-        // Hide AR container completely to free up resources
+        // Hide AR container completely
         const arContainer = document.getElementById('ar-container');
         if (arContainer) {
             arContainer.style.display = 'none';
-            // Also hide any canvas elements inside
             const canvas = arContainer.querySelector('canvas');
             if (canvas) {
                 canvas.style.display = 'none';
@@ -168,31 +169,54 @@
             resetButton.classList.add('hidden');
         }
 
-        // COMPLETELY DIFFERENT APPROACH: Make body scrollable instead of nested fixed element
-        // This is more reliable on iOS Safari which has issues with nested fixed scrollable elements
-        
-        // Change body to be scrollable (not fixed)
-        document.body.style.position = 'relative';
-        document.body.style.overflow = 'auto';
-        document.body.style.height = 'auto';
-        document.body.style.minHeight = '100vh';
-        document.documentElement.style.height = 'auto';
-        document.documentElement.style.overflow = 'auto';
-
-        // Render first question BEFORE showing view
+        // Render first question
         renderQuestion();
 
-        // Show quiz view
+        // Show quiz view (using display, not visibility, for cleaner state)
         quizView.classList.remove('hidden');
         
-        // Reset scroll to top of body
-        window.scrollTo(0, 0);
-        document.body.scrollTop = 0;
-        document.documentElement.scrollTop = 0;
+        // CRITICAL iOS FIX: Add passive touch listeners to ensure scroll works
+        // This prevents any event interference
+        const ensureScrollWorks = () => {
+            if (quizScrollWrapper) {
+                // Add passive touch listeners to "prime" the scroll
+                const touchHandler = (e) => {
+                    // Don't prevent default - let iOS handle scroll naturally
+                };
+                quizScrollWrapper.addEventListener('touchstart', touchHandler, { passive: true });
+                quizScrollWrapper.addEventListener('touchmove', touchHandler, { passive: true });
+                quizScrollWrapper.addEventListener('touchend', touchHandler, { passive: true });
+            }
+        };
         
-        // Force layout calculation
+        // Reset scroll position
+        quizScrollWrapper.scrollTop = 0;
+        
+        // Force layout calculations
         void quizView.offsetHeight;
-        void document.body.offsetHeight;
+        void quizScrollWrapper.offsetHeight;
+        void quizContent.offsetHeight;
+        void quizScrollWrapper.scrollHeight;
+        
+        // Add touch listeners
+        ensureScrollWorks();
+        
+        // iOS Safari needs the scroll to be "used" before it works properly
+        // Programmatically scroll a tiny amount to wake up the scroll compositor
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // Scroll down 1px
+                quizScrollWrapper.scrollTop = 1;
+                // Force reflow
+                void quizScrollWrapper.offsetHeight;
+                requestAnimationFrame(() => {
+                    // Scroll back to top
+                    quizScrollWrapper.scrollTop = 0;
+                    // Force one more layout to ensure it's applied
+                    void quizScrollWrapper.offsetHeight;
+                });
+            });
+        });
 
         // Set up back button handler
         if (backToARButton) {
@@ -392,13 +416,12 @@
 
         quizContent.innerHTML = html;
 
-        // Reset scroll position after content is rendered (using body scroll now)
-        window.scrollTo(0, 0);
-        document.body.scrollTop = 0;
-        document.documentElement.scrollTop = 0;
-        
-        // Force layout calculation
-        void document.body.offsetHeight;
+        // Reset scroll position after content is rendered
+        if (quizScrollWrapper) {
+            quizScrollWrapper.scrollTop = 0;
+            // Force layout calculation
+            void quizScrollWrapper.offsetHeight;
+        }
 
         // Attach restart button listener
         const restartButton = quizContent.querySelector('.restart-button');
@@ -417,22 +440,14 @@
     async function backToAR() {
         console.log('Returning to AR view');
         
-        // Restore body positioning for AR mode
-        document.body.style.position = 'fixed';
-        document.body.style.overflow = 'hidden';
-        document.body.style.height = '100%';
-        document.body.style.minHeight = '';
-        document.documentElement.style.height = '100%';
-        document.documentElement.style.overflow = 'hidden';
-        
-        // Reset scroll
-        window.scrollTo(0, 0);
-        document.body.scrollTop = 0;
-        document.documentElement.scrollTop = 0;
-        
         // Hide quiz view
         if (quizView) {
             quizView.classList.add('hidden');
+        }
+        
+        // Reset scroll wrapper
+        if (quizScrollWrapper) {
+            quizScrollWrapper.scrollTop = 0;
         }
 
         // Show AR container
