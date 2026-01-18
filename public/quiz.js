@@ -24,6 +24,41 @@
     let backToARButton = null;
 
     // ============================================================================
+    // iOS SCROLL FIX
+    // ============================================================================
+    
+    /**
+     * Forces iOS Safari to properly composite a scrollable element.
+     * This fixes the freeze-on-first-scroll bug that occurs when body is position:fixed.
+     * The technique works by temporarily modifying transform to force a repaint.
+     * @param {HTMLElement} element - The scrollable element to fix
+     */
+    function forceIOSRepaint(element) {
+        if (!element) return;
+        
+        // Method 1: Toggle a 3D transform to force GPU re-composition
+        const originalTransform = element.style.transform;
+        element.style.transform = 'translate3d(0, 0, 0)';
+        
+        // Force a synchronous layout/reflow
+        void element.offsetHeight;
+        
+        // Use double RAF to ensure we're past the paint cycle
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                // Trigger a tiny scroll to "wake up" the scroll compositor
+                element.scrollTop = 1;
+                
+                requestAnimationFrame(() => {
+                    element.scrollTop = 0;
+                    // Restore original transform
+                    element.style.transform = originalTransform || 'translateZ(0)';
+                });
+            });
+        });
+    }
+
+    // ============================================================================
     // DATA LOADING
     // ============================================================================
     
@@ -146,8 +181,16 @@
         // Show quiz view
         quizView.classList.remove('hidden');
 
+        // Fix iOS Safari scroll freeze: temporarily unlock body positioning
+        // iOS has issues with scrollable children when body is position:fixed + overflow:hidden
+        document.body.style.position = 'static';
+        document.body.style.overflow = 'hidden';
+
         // Reset scroll position
         quizView.scrollTop = 0;
+
+        // Force iOS Safari to properly composite the scrollable view
+        forceIOSRepaint(quizView);
 
         // Render first question
         renderQuestion();
@@ -371,6 +414,10 @@
      */
     async function backToAR() {
         console.log('Returning to AR view');
+        
+        // Restore body positioning for AR mode
+        document.body.style.position = 'fixed';
+        document.body.style.overflow = 'hidden';
         
         // Hide quiz view
         if (quizView) {
