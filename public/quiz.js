@@ -253,9 +253,17 @@
         `;
 
         // Add answer options
+        const userAnswer = userAnswers[currentQuestionIndex];
         question.options.forEach((option, index) => {
+            let buttonClass = 'option-button';
+            
+            // If user has already answered this question correctly, show it as correct
+            if (userAnswer !== undefined && index === question.correct) {
+                buttonClass += ' correct';
+            }
+            
             html += `
-                <button class="option-button" data-index="${index}">
+                <button class="${buttonClass}" data-index="${index}">
                     ${option}
                 </button>
             `;
@@ -293,19 +301,84 @@
      * Attaches event listeners to question elements
      */
     function attachQuestionListeners() {
+        const question = currentQuiz.questions[currentQuestionIndex];
+        const correctAnswerIndex = question.correct;
+        
         // Answer option buttons
         const answerOptions = quizContent.querySelectorAll('.option-button');
+        const nextButton = quizContent.querySelector('.next-button');
+        const submitButton = quizContent.querySelector('.submit-button');
+        
+        // If user has already answered this question correctly, enable next/submit button
+        if (userAnswers[currentQuestionIndex] !== undefined) {
+            if (nextButton) nextButton.disabled = false;
+            if (submitButton) submitButton.disabled = false;
+            
+            // Disable all buttons since the question is already answered
+            answerOptions.forEach(opt => {
+                opt.disabled = true;
+                opt.style.pointerEvents = 'none';
+            });
+            return; // Don't attach click listeners if already answered
+        } else {
+            // Disable next/submit buttons initially if no correct answer selected yet
+            if (nextButton) nextButton.disabled = true;
+            if (submitButton) submitButton.disabled = true;
+        }
+        
         answerOptions.forEach(button => {
+            const answerIndex = parseInt(button.getAttribute('data-index'));
+            
+            // If this answer was previously marked as incorrect, disable it
+            if (button.classList.contains('incorrect')) {
+                button.disabled = true;
+                button.style.pointerEvents = 'none';
+                return;
+            }
+            
             button.addEventListener('click', (e) => {
-                // Remove previous selection
-                answerOptions.forEach(opt => opt.classList.remove('selected'));
+                const clickedButton = e.target;
+                const selectedIndex = parseInt(clickedButton.getAttribute('data-index'));
                 
-                // Mark this option as selected
-                e.target.classList.add('selected');
-                
-                // Store answer
-                const answerIndex = parseInt(e.target.getAttribute('data-index'));
-                userAnswers[currentQuestionIndex] = answerIndex;
+                // Check if this is the correct answer
+                if (selectedIndex === correctAnswerIndex) {
+                    // Correct answer!
+                    clickedButton.classList.add('correct');
+                    clickedButton.classList.remove('selected');
+                    
+                    // Store the correct answer
+                    userAnswers[currentQuestionIndex] = selectedIndex;
+                    
+                    // Enable next/submit button
+                    if (nextButton) {
+                        nextButton.disabled = false;
+                    }
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                    }
+                    
+                    // Disable all other buttons to prevent further clicks
+                    answerOptions.forEach(opt => {
+                        if (opt !== clickedButton) {
+                            opt.disabled = true;
+                            opt.style.pointerEvents = 'none';
+                        }
+                    });
+                    
+                    if (window.Toast) {
+                        window.Toast.success('Correct! You can now proceed.', 'Well Done', 2000);
+                    }
+                } else {
+                    // Wrong answer
+                    clickedButton.classList.add('incorrect');
+                    clickedButton.classList.remove('selected');
+                    clickedButton.disabled = true;
+                    clickedButton.style.pointerEvents = 'none';
+                    
+                    if (window.Toast) {
+                        window.Toast.error('That\'s not correct. Please try again.', 'Incorrect Answer', 2000);
+                    }
+                }
             });
         });
 
@@ -320,7 +393,6 @@
             });
         }
 
-        const nextButton = quizContent.querySelector('.next-button');
         if (nextButton) {
             nextButton.addEventListener('click', () => {
                 if (userAnswers[currentQuestionIndex] !== undefined) {
@@ -330,20 +402,19 @@
                     }
                 } else {
                     if (window.Toast) {
-                        window.Toast.warning('Please select an answer before continuing.', 'Select Answer', 3000);
+                        window.Toast.warning('Please select the correct answer before continuing.', 'Select Answer', 3000);
                     }
                 }
             });
         }
 
-        const submitButton = quizContent.querySelector('.submit-button');
         if (submitButton) {
             submitButton.addEventListener('click', () => {
                 if (userAnswers[currentQuestionIndex] !== undefined) {
                     showResults();
                 } else {
                     if (window.Toast) {
-                        window.Toast.warning('Please select an answer before submitting.', 'Select Answer', 3000);
+                        window.Toast.warning('Please select the correct answer before submitting.', 'Select Answer', 3000);
                     }
                 }
             });
