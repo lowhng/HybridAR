@@ -1044,29 +1044,35 @@ async function createContentForSurface(surfaceType) {
                                 if (mat) {
                                     mat.visible = true;
                                     // Preserve original transparency settings (don't override)
-                                    // Set explicit blue color to counteract bright lighting
+                                    // Set both base color and emissive to blue to counteract bright lighting
                                     // Use a water-like blue color for the puddle
-                                    mat.emissive = new THREE.Color(0x1a6b9c); // Dark blue color
-                                    mat.emissiveIntensity = 0.8;
+                                    mat.color = new THREE.Color(0x3a8bc4); // Set base color to blue
+                                    mat.emissive = new THREE.Color(0x5cb3e6); // Brighter blue for emissive
+                                    mat.emissiveIntensity = 1.2; // Higher intensity to compete with scene lighting
                                     // Reduce how much the material responds to lights
                                     if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
                                         mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
                                         mat.metalness = Math.min(mat.metalness || 0.0, 0.2);
                                     }
+                                    // Force material update
+                                    mat.needsUpdate = true;
                                 }
                             });
                         } else {
                             child.material.visible = true;
                             // Preserve original transparency settings (don't override)
-                            // Set explicit blue color to counteract bright lighting
+                            // Set both base color and emissive to blue to counteract bright lighting
                             // Use a water-like blue color for the puddle
-                            child.material.emissive = new THREE.Color(0x1a6b9c); // Dark blue color
-                            child.material.emissiveIntensity = 0.8;
+                            child.material.color = new THREE.Color(0x3a8bc4); // Set base color to blue
+                            child.material.emissive = new THREE.Color(0x5cb3e6); // Brighter blue for emissive
+                            child.material.emissiveIntensity = 1.2; // Higher intensity to compete with scene lighting
                             // Reduce how much the material responds to lights
                             if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
                                 child.material.roughness = Math.max(child.material.roughness || 1.0, 0.8);
                                 child.material.metalness = Math.min(child.material.metalness || 0.0, 0.2);
                             }
+                            // Force material update
+                            child.material.needsUpdate = true;
                         }
                     }
                 }
