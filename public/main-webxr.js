@@ -1070,12 +1070,12 @@ async function createContentForSurface(surfaceType) {
                             // PUDDLE APPEARANCE SETTINGS - Adjust these values to change look
                             // Transparency: Enable FIRST before setting opacity
                             child.material.transparent = true;
-                            child.material.opacity = 0.7; // 0.0 = fully transparent, 1.0 = fully opaque
+                            child.material.opacity = 0.2; // 0.0 = fully transparent, 1.0 = fully opaque
                             
                             // Colors
                             child.material.color = new THREE.Color(0x1a4d6b); // Dark blue base color
                             child.material.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
-                            child.material.emissiveIntensity = 0.7; // Glow intensity (0.0-1.0)
+                            child.material.emissiveIntensity = 0.5; // Glow intensity (0.0-1.0)
                             
                             // Material properties
                             if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
