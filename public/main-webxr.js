@@ -1046,16 +1046,13 @@ async function createContentForSurface(surfaceType) {
                                 if (mat) {
                                     mat.visible = true;
                                     // Set dark blue color for puddle
+                                    mat.opacity = 0.2;
                                     mat.color = new THREE.Color(0x1a4d6b); // Dark blue base color
                                     mat.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
                                     mat.emissiveIntensity = 0.5; // Lower intensity for darker appearance
                                     // Ensure transparency is enabled (puddles should be transparent)
                                     if (!mat.transparent) {
                                         mat.transparent = true;
-                                    }
-                                    // If opacity is 1.0 (fully opaque), reduce it for transparency
-                                    if (mat.opacity === 1.0) {
-                                        mat.opacity = 0.7; // Make it somewhat transparent
                                     }
                                     // Reduce how much the material responds to lights
                                     if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
