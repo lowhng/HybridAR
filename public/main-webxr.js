@@ -1044,13 +1044,10 @@ async function createContentForSurface(surfaceType) {
                                 if (mat) {
                                     mat.visible = true;
                                     // Preserve original transparency settings (don't override)
-                                    // Make material less affected by bright scene lighting
-                                    // Use a darkened version of the color for emissive to preserve original appearance
-                                    if (mat.color) {
-                                        // Clone the color and darken it significantly for emissive
-                                        mat.emissive = mat.color.clone().multiplyScalar(0.3);
-                                        mat.emissiveIntensity = 1.0;
-                                    }
+                                    // Set explicit blue color to counteract bright lighting
+                                    // Use a water-like blue color for the puddle
+                                    mat.emissive = new THREE.Color(0x1a6b9c); // Dark blue color
+                                    mat.emissiveIntensity = 0.8;
                                     // Reduce how much the material responds to lights
                                     if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
                                         mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
@@ -1061,13 +1058,10 @@ async function createContentForSurface(surfaceType) {
                         } else {
                             child.material.visible = true;
                             // Preserve original transparency settings (don't override)
-                            // Make material less affected by bright scene lighting
-                            // Use a darkened version of the color for emissive to preserve original appearance
-                            if (child.material.color) {
-                                // Clone the color and darken it significantly for emissive
-                                child.material.emissive = child.material.color.clone().multiplyScalar(0.3);
-                                child.material.emissiveIntensity = 1.0;
-                            }
+                            // Set explicit blue color to counteract bright lighting
+                            // Use a water-like blue color for the puddle
+                            child.material.emissive = new THREE.Color(0x1a6b9c); // Dark blue color
+                            child.material.emissiveIntensity = 0.8;
                             // Reduce how much the material responds to lights
                             if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
                                 child.material.roughness = Math.max(child.material.roughness || 1.0, 0.8);
