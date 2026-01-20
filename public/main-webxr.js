@@ -1037,18 +1037,24 @@ async function createContentForSurface(surfaceType) {
             puddleModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
-                    // Preserve original transparency and opacity from the imported model
+                    // Set puddle to be dark blue and transparent
                     if (child.material) {
                         if (Array.isArray(child.material)) {
                             child.material.forEach(mat => {
                                 if (mat) {
                                     mat.visible = true;
-                                    // Preserve original transparency settings (don't override)
-                                    // Set both base color and emissive to blue to counteract bright lighting
-                                    // Use a water-like blue color for the puddle
-                                    mat.color = new THREE.Color(0x3a8bc4); // Set base color to blue
-                                    mat.emissive = new THREE.Color(0x5cb3e6); // Brighter blue for emissive
-                                    mat.emissiveIntensity = 1.2; // Higher intensity to compete with scene lighting
+                                    // Set dark blue color for puddle
+                                    mat.color = new THREE.Color(0x1a4d6b); // Dark blue base color
+                                    mat.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
+                                    mat.emissiveIntensity = 0.5; // Lower intensity for darker appearance
+                                    // Ensure transparency is enabled (puddles should be transparent)
+                                    if (!mat.transparent) {
+                                        mat.transparent = true;
+                                    }
+                                    // If opacity is 1.0 (fully opaque), reduce it for transparency
+                                    if (mat.opacity === 1.0) {
+                                        mat.opacity = 0.7; // Make it somewhat transparent
+                                    }
                                     // Reduce how much the material responds to lights
                                     if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
                                         mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
@@ -1060,12 +1066,18 @@ async function createContentForSurface(surfaceType) {
                             });
                         } else {
                             child.material.visible = true;
-                            // Preserve original transparency settings (don't override)
-                            // Set both base color and emissive to blue to counteract bright lighting
-                            // Use a water-like blue color for the puddle
-                            child.material.color = new THREE.Color(0x3a8bc4); // Set base color to blue
-                            child.material.emissive = new THREE.Color(0x5cb3e6); // Brighter blue for emissive
-                            child.material.emissiveIntensity = 1.2; // Higher intensity to compete with scene lighting
+                            // Set dark blue color for puddle
+                            child.material.color = new THREE.Color(0x1a4d6b); // Dark blue base color
+                            child.material.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
+                            child.material.emissiveIntensity = 0.5; // Lower intensity for darker appearance
+                            // Ensure transparency is enabled (puddles should be transparent)
+                            if (!child.material.transparent) {
+                                child.material.transparent = true;
+                            }
+                            // If opacity is 1.0 (fully opaque), reduce it for transparency
+                            if (child.material.opacity === 1.0) {
+                                child.material.opacity = 0.7; // Make it somewhat transparent
+                            }
                             // Reduce how much the material responds to lights
                             if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
                                 child.material.roughness = Math.max(child.material.roughness || 1.0, 0.8);
