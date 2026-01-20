@@ -1037,20 +1037,40 @@ async function createContentForSurface(surfaceType) {
             puddleModel.traverse((child) => {
                 if (child.isMesh) {
                     child.visible = true;
-                    // Ensure materials are not transparent and are visible
+                    // Preserve original transparency and opacity from the imported model
                     if (child.material) {
                         if (Array.isArray(child.material)) {
                             child.material.forEach(mat => {
                                 if (mat) {
-                                    mat.transparent = false;
-                                    mat.opacity = 1.0;
                                     mat.visible = true;
+                                    // Preserve original transparency settings (don't override)
+                                    // Make material less affected by scene lighting
+                                    // by making it more emissive (self-lit)
+                                    if (mat.color) {
+                                        mat.emissive = mat.color.clone();
+                                        mat.emissiveIntensity = 0.6; // 60% self-lit
+                                    }
+                                    // Reduce how much the material responds to lights
+                                    if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
+                                        mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
+                                        mat.metalness = Math.min(mat.metalness || 0.0, 0.2);
+                                    }
                                 }
                             });
                         } else {
-                            child.material.transparent = false;
-                            child.material.opacity = 1.0;
                             child.material.visible = true;
+                            // Preserve original transparency settings (don't override)
+                            // Make material less affected by scene lighting
+                            // by making it more emissive (self-lit)
+                            if (child.material.color) {
+                                child.material.emissive = child.material.color.clone();
+                                child.material.emissiveIntensity = 0.6; // 60% self-lit
+                            }
+                            // Reduce how much the material responds to lights
+                            if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
+                                child.material.roughness = Math.max(child.material.roughness || 1.0, 0.8);
+                                child.material.metalness = Math.min(child.material.metalness || 0.0, 0.2);
+                            }
                         }
                     }
                 }
