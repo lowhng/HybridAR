@@ -171,6 +171,7 @@ let surfaceDetectionTime = 0; // Timestamp when surface was first detected
 let lastReticlePosition = null; // Last reticle position for stability checking
 let surfaceStabilityDuration = 1500; // Minimum time (ms) surface must be stable before auto-spawn
 let reticleStabilityThreshold = 0.05; // Maximum position change (meters) to consider reticle stable
+let isSpawning = false; // Flag to prevent concurrent spawns
 
 // Performance optimization: Reusable vector/matrix objects to reduce allocations
 const _tempVector = new THREE.Vector3();
@@ -625,6 +626,7 @@ async function initWebXR() {
         autoSpawnPosition = null;
         surfaceDetectionTime = 0;
         lastReticlePosition = null;
+        isSpawning = false; // Reset spawning flag
         
         if (window.Toast) {
             window.Toast.success('WebXR session started!', 'Session Active', 3000);
@@ -1095,6 +1097,12 @@ async function createContentForSurface(surfaceType) {
             console.log('ContentGroup children count:', contentGroup.children.length);
             console.log('ContentGroup visible:', contentGroup.visible);
             console.log('PuddleModel visible:', puddleModel.visible);
+            
+            // Debug: Log if multiple puddles are being added (should always be 1)
+            if (contentGroup.children.length > 1) {
+                console.warn('⚠️ WARNING: Multiple children in contentGroup! This should not happen.');
+                console.warn('Children count:', contentGroup.children.length);
+            }
             
             // Verify final bounding box after all transformations
             const finalBox = new THREE.Box3().setFromObject(puddleModel);
@@ -1616,9 +1624,13 @@ function onXRFrame(timestamp, frame) {
             // Auto-spawn if:
             // 1. Haven't spawned yet AND time has elapsed (3-5 seconds) AND surface is stable
             // 2. OR user is too far from previous spawn and cooldown has passed AND surface is stable
-            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable;
+            // 3. AND not currently spawning (prevent multiple concurrent spawns)
+            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning;
             
             if (shouldSpawn) {
+                // Set spawning flag immediately to prevent concurrent spawns
+                isSpawning = true;
+                debugLog('🎯 Auto-spawn triggered - isSpawning flag set to true');
                 // Use reticle position/orientation if available (even if invisible)
                 // This ensures correct orientation matching tap-to-place behavior
                 let useReticle = false;
@@ -1733,6 +1745,9 @@ function onXRFrame(timestamp, frame) {
                         debugLog(`Auto-spawned ${spawnSurfaceType} model using ${useReticle ? 'reticle' : 'fallback'} placement`);
                     } catch (error) {
                         console.error('Error during auto-spawn:', error);
+                    } finally {
+                        // Always reset spawning flag when done (success or error)
+                        isSpawning = false;
                     }
                 })();
             }
@@ -2105,6 +2120,7 @@ function cleanupARResources() {
     autoSpawnPosition = null;
     surfaceDetectionTime = 0;
     lastReticlePosition = null;
+    isSpawning = false; // Reset spawning flag
     // Clear smoothing buffer
     recentHitTestPoses = [];
     
@@ -2318,6 +2334,7 @@ function resetAnchor() {
     autoSpawnPosition = null;
     surfaceDetectionTime = 0;
     lastReticlePosition = null;
+    isSpawning = false; // Reset spawning flag
     // Clear smoothing buffer
     recentHitTestPoses = [];
     
