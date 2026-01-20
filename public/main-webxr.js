@@ -1034,58 +1034,42 @@ async function createContentForSurface(surfaceType) {
             console.log('Puddle model scale:', puddleModel.scale);
             console.log('Puddle model scaled size:', scaledSize);
             
-            // Make sure model is visible and materials are properly set
+            // Helper function to apply puddle material settings
+            const applyPuddleMaterial = (mat) => {
+                if (!mat) return; // Safety check
+                
+                mat.visible = true;
+                // PUDDLE APPEARANCE SETTINGS - Adjust these values to change look
+                // Transparency: Enable FIRST before setting opacity
+                mat.transparent = true;
+                mat.opacity = 0.2; // 0.0 = fully transparent, 1.0 = fully opaque
+                
+                // Colors
+                mat.color = new THREE.Color(0x1a4d6b); // Dark blue base color
+                mat.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
+                mat.emissiveIntensity = 0.2; // Glow intensity (0.0-1.0)
+                
+                // Material properties
+                if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
+                    mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
+                    mat.metalness = Math.min(mat.metalness || 0.0, 0.2);
+                }
+                
+                // Force material update
+                mat.needsUpdate = true;
+            };
+            
+            // Make sure model is visible and apply materials
             puddleModel.visible = true;
             puddleModel.traverse((child) => {
-                if (child.isMesh) {
+                if (child.isMesh && child.material) {
                     child.visible = true;
-                    // Set puddle to be dark blue and transparent
-                    if (child.material) {
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(mat => {
-                                if (mat) {
-                                    mat.visible = true;
-                                    // PUDDLE APPEARANCE SETTINGS - Adjust these values to change look
-                                    // Transparency: Enable FIRST before setting opacity
-                                    mat.transparent = true;
-                                    mat.opacity = 0.2; // 0.0 = fully transparent, 1.0 = fully opaque
-                                    
-                                    // Colors
-                                    mat.color = new THREE.Color(0x1a4d6b); // Dark blue base color
-                                    mat.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
-                                    mat.emissiveIntensity = 0.5; // Glow intensity (0.0-1.0)
-                                    
-                                    // Material properties
-                                    if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
-                                        mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
-                                        mat.metalness = Math.min(mat.metalness || 0.0, 0.2);
-                                    }
-                                    
-                                    // Force material update
-                                    mat.needsUpdate = true;
-                                }
-                            });
-                        } else {
-                            child.material.visible = true;
-                            // PUDDLE APPEARANCE SETTINGS - Adjust these values to change look
-                            // Transparency: Enable FIRST before setting opacity
-                            child.material.transparent = true;
-                            child.material.opacity = 0.2; // 0.0 = fully transparent, 1.0 = fully opaque
-                            
-                            // Colors
-                            child.material.color = new THREE.Color(0x1a4d6b); // Dark blue base color
-                            child.material.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
-                            child.material.emissiveIntensity = 0.5; // Glow intensity (0.0-1.0)
-                            
-                            // Material properties
-                            if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
-                                child.material.roughness = Math.max(child.material.roughness || 1.0, 0.8);
-                                child.material.metalness = Math.min(child.material.metalness || 0.0, 0.2);
-                            }
-                            
-                            // Force material update
-                            child.material.needsUpdate = true;
-                        }
+                    
+                    // Handle both single material and array of materials
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(applyPuddleMaterial);
+                    } else {
+                        applyPuddleMaterial(child.material);
                     }
                 }
             });
