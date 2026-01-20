@@ -1048,12 +1048,12 @@ async function createContentForSurface(surfaceType) {
                                     // PUDDLE APPEARANCE SETTINGS - Adjust these values to change look
                                     // Transparency: Enable FIRST before setting opacity
                                     mat.transparent = true;
-                                    mat.opacity = 0.7; // 0.0 = fully transparent, 1.0 = fully opaque
+                                    mat.opacity = 0.2; // 0.0 = fully transparent, 1.0 = fully opaque
                                     
                                     // Colors
                                     mat.color = new THREE.Color(0x1a4d6b); // Dark blue base color
                                     mat.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
-                                    mat.emissiveIntensity = 0.7; // Glow intensity (0.0-1.0)
+                                    mat.emissiveIntensity = 0.5; // Glow intensity (0.0-1.0)
                                     
                                     // Material properties
                                     if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
