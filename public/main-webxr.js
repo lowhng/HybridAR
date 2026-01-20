@@ -1044,11 +1044,12 @@ async function createContentForSurface(surfaceType) {
                                 if (mat) {
                                     mat.visible = true;
                                     // Preserve original transparency settings (don't override)
-                                    // Make material less affected by scene lighting
-                                    // by making it more emissive (self-lit)
+                                    // Make material less affected by bright scene lighting
+                                    // Use a darkened version of the color for emissive to preserve original appearance
                                     if (mat.color) {
-                                        mat.emissive = mat.color.clone();
-                                        mat.emissiveIntensity = 0.6; // 60% self-lit
+                                        // Clone the color and darken it significantly for emissive
+                                        mat.emissive = mat.color.clone().multiplyScalar(0.3);
+                                        mat.emissiveIntensity = 1.0;
                                     }
                                     // Reduce how much the material responds to lights
                                     if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
@@ -1060,11 +1061,12 @@ async function createContentForSurface(surfaceType) {
                         } else {
                             child.material.visible = true;
                             // Preserve original transparency settings (don't override)
-                            // Make material less affected by scene lighting
-                            // by making it more emissive (self-lit)
+                            // Make material less affected by bright scene lighting
+                            // Use a darkened version of the color for emissive to preserve original appearance
                             if (child.material.color) {
-                                child.material.emissive = child.material.color.clone();
-                                child.material.emissiveIntensity = 0.6; // 60% self-lit
+                                // Clone the color and darken it significantly for emissive
+                                child.material.emissive = child.material.color.clone().multiplyScalar(0.3);
+                                child.material.emissiveIntensity = 1.0;
                             }
                             // Reduce how much the material responds to lights
                             if (child.material.type === 'MeshStandardMaterial' || child.material.type === 'MeshPhysicalMaterial') {
