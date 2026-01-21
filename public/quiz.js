@@ -422,56 +422,36 @@
     }
 
     /**
-     * Shows quiz results
+     * Shows quiz recap
      */
     function showResults() {
         if (!currentQuiz || !quizContent) {
             return;
         }
 
-        const totalQuestions = currentQuiz.questions.length;
-        let correctCount = 0;
-
-        // Calculate score
-        currentQuiz.questions.forEach((question, index) => {
-            if (userAnswers[index] === question.correct) {
-                correctCount++;
-            }
-        });
-
-        const score = Math.round((correctCount / totalQuestions) * 100);
-
-        // Build results HTML
+        // Build recap HTML
         let html = `
             <div class="quiz-header">
-                <h2>${currentQuiz.title} - Results</h2>
+                <h2>${currentQuiz.title} - Recap</h2>
             </div>
-            <div class="quiz-results">
-                <div class="score-display">
-                    <div class="score-circle">
-                        <div class="score-value">${score}%</div>
-                    </div>
-                    <p class="score-text">You got ${correctCount} out of ${totalQuestions} questions correct!</p>
+            <div class="quiz-recap">
+                <div class="recap-intro">
+                    <p>Here's a summary of what you learned:</p>
                 </div>
-                <div class="results-breakdown">
+                <div class="recap-list">
         `;
 
         // Show each question and answer
         currentQuiz.questions.forEach((question, index) => {
             const userAnswer = userAnswers[index];
-            const isCorrect = userAnswer === question.correct;
             const userAnswerText = question.options[userAnswer];
-            const correctAnswerText = question.options[question.correct];
 
             html += `
-                <div class="result-item ${isCorrect ? 'correct' : 'incorrect'}">
-                    <div class="result-icon">${isCorrect ? '✓' : '✗'}</div>
-                    <div class="result-content">
-                        <div class="result-question">${question.question}</div>
-                        <div class="result-answer">
-                            <strong>Your answer:</strong> ${userAnswerText}
-                        </div>
-                        ${!isCorrect ? `<div class="result-correct"><strong>Correct answer:</strong> ${correctAnswerText}</div>` : ''}
+                <div class="recap-item">
+                    <div class="recap-number">Question ${index + 1}</div>
+                    <div class="recap-content">
+                        <div class="recap-question">${question.question}</div>
+                        <div class="recap-answer">${userAnswerText}</div>
                     </div>
                 </div>
             `;

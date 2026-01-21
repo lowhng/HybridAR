@@ -708,103 +708,57 @@ body {
     transform: none;
 }
 
-/* Quiz Results */
-.quiz-results {
-    text-align: center;
+/* Quiz Recap */
+.quiz-recap {
+    text-align: left;
 }
 
-.quiz-results h2 {
-    font-size: 32px;
-    color: #333;
+.recap-intro {
     margin-bottom: 30px;
-}
-
-.score-display {
-    margin-bottom: 40px;
-}
-
-.score-circle {
-    width: 150px;
-    height: 150px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 20px;
-    box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
-}
-
-.score-value {
-    font-size: 48px;
-    font-weight: 700;
-    color: white;
-}
-
-.score-text {
+    text-align: center;
     font-size: 18px;
     color: #666;
 }
 
-.results-breakdown {
-    text-align: left;
-    margin-top: 30px;
+.recap-list {
+    margin-bottom: 30px;
 }
 
-.result-item {
-    display: flex;
-    gap: 15px;
+.recap-item {
     padding: 20px;
     margin-bottom: 15px;
     border-radius: 12px;
     background: #f9fafb;
+    border-left: 4px solid #3b82f6;
 }
 
-.result-item.correct {
-    background: #f0fdf4;
-    border-left: 4px solid #22c55e;
+.recap-number {
+    font-size: 14px;
+    font-weight: 600;
+    color: #3b82f6;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.result-item.incorrect {
-    background: #fef2f2;
-    border-left: 4px solid #ef4444;
+.recap-content {
+    display: block;
 }
 
-.result-icon {
-    font-size: 24px;
-    font-weight: bold;
-    flex-shrink: 0;
-}
-
-.result-item.correct .result-icon {
-    color: #22c55e;
-}
-
-.result-item.incorrect .result-icon {
-    color: #ef4444;
-}
-
-.result-content {
-    flex: 1;
-}
-
-.result-question {
+.recap-question {
     font-size: 16px;
     font-weight: 600;
     color: #333;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
 }
 
-.result-answer {
-    font-size: 14px;
+.recap-answer {
+    font-size: 15px;
     color: #666;
-    margin-bottom: 4px;
-}
-
-.result-correct {
-    font-size: 14px;
-    color: #22c55e;
-    font-weight: 600;
+    padding: 12px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
 }
 
 /* Back to AR Button */
