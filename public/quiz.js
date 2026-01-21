@@ -172,6 +172,14 @@
         // Render first question
         renderQuestion();
 
+        // CRITICAL: Hide XR overlay to prevent compositor interference
+        // Even though it has pointer-events: none, removing it from render tree
+        // ensures clean compositor layer creation for the quiz
+        const xrOverlay = document.getElementById('xr-overlay');
+        if (xrOverlay) {
+            xrOverlay.style.display = 'none';
+        }
+
         // Show quiz view (using display, not visibility, for cleaner state)
         quizView.classList.remove('hidden');
         
@@ -200,6 +208,11 @@
         
         // Add touch listeners
         ensureScrollWorks();
+        
+        // CRITICAL FIX: Wake up the iOS Safari scroll compositor
+        // This is THE KEY FIX - forces compositor initialization just like
+        // app switching or having an Instagram video call overlay does
+        forceIOSRepaint(quizScrollWrapper);
         
         // iOS Safari needs the scroll to be "used" before it works properly
         // Programmatically scroll a tiny amount to wake up the scroll compositor
@@ -499,6 +512,12 @@
         // Reset scroll wrapper
         if (quizScrollWrapper) {
             quizScrollWrapper.scrollTop = 0;
+        }
+
+        // Restore XR overlay (was hidden when quiz was shown)
+        const xrOverlay = document.getElementById('xr-overlay');
+        if (xrOverlay) {
+            xrOverlay.style.display = '';
         }
 
         // Show AR container
