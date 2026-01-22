@@ -269,22 +269,18 @@
         // app switching or having an Instagram video call overlay does
         // The freeze happens on finger lift (momentum scroll), so we need to
         // ensure momentum scrolling compositor is fully initialized
-        // Add additional RAF cycles to ensure DOM is fully ready after XR transition
         requestAnimationFrame(() => {
+            // First frame: view should be painted now, force layout
+            void quizScrollWrapper.offsetHeight;
+            void quizScrollWrapper.scrollHeight;
+            void quizScrollWrapper.clientHeight;
+            
             requestAnimationFrame(() => {
-                // Now start the compositor wake-up sequence
+                // Second frame: now wake up the scroll compositor (including momentum)
+                forceIOSRepaint(quizScrollWrapper);
+                
+                // Third frame: ensure momentum compositor is fully ready
                 requestAnimationFrame(() => {
-                    // First frame: view should be painted now, force layout
-                    void quizScrollWrapper.offsetHeight;
-                    void quizScrollWrapper.scrollHeight;
-                    void quizScrollWrapper.clientHeight;
-                    
-                    requestAnimationFrame(() => {
-                        // Second frame: now wake up the scroll compositor (including momentum)
-                        forceIOSRepaint(quizScrollWrapper);
-                        
-                        // Third frame: ensure momentum compositor is fully ready
-                        requestAnimationFrame(() => {
                     // Force final layout and verify scroll is ready
                     void quizScrollWrapper.offsetHeight;
                     void quizScrollWrapper.scrollHeight;
@@ -315,8 +311,6 @@
                             tempCompositorHot.parentNode.removeChild(tempCompositorHot);
                         }
                     }
-                        });
-                    });
                 });
             });
         });

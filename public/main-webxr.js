@@ -1953,19 +1953,9 @@ async function exitARToQuiz() {
     // Hide quiz button
     hideQuizButton();
 
-    // End XR session and wait for it to actually end
+    // End XR session
     if (xrSession) {
-        // Create a promise that resolves when session ends
-        const sessionEndPromise = new Promise((resolve) => {
-            const endHandler = () => {
-                xrSession.removeEventListener('end', endHandler);
-                resolve();
-            };
-            xrSession.addEventListener('end', endHandler);
-            xrSession.end();
-        });
-        
-        await sessionEndPromise;
+        xrSession.end();
         xrSession = null;
     }
 
@@ -1974,28 +1964,7 @@ async function exitARToQuiz() {
         renderer.setAnimationLoop(null);
     }
 
-    // CRITICAL: Wait for compositor to fully transition from XR to DOM mode
-    // This gives iOS time to release XR resources and reinitialize compositor
-    await new Promise(resolve => {
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                resolve();
-            });
-        });
-    });
-
-    // Hide and clear canvas before showing quiz
-    const arContainer = document.getElementById('ar-container');
-    if (arContainer) {
-        arContainer.style.display = 'none';
-        const canvas = arContainer.querySelector('canvas');
-        if (canvas) {
-            canvas.style.display = 'none';
-            canvas.style.visibility = 'hidden';
-        }
-    }
-
-    // Now show quiz - compositor should be fully transitioned
+    // Show quiz view using the stored model type
     if (window.QuizSystem && window.QuizSystem.showQuiz) {
         try {
             await window.QuizSystem.showQuiz(modelTypeForQuiz);
