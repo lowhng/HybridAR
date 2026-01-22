@@ -1224,12 +1224,14 @@ function setupTapToPlace() {
     if (!xrSession) return;
     
     xrSession.addEventListener('select', async () => {
-        // If we have a visible reticle (hit-test result), always (re)place the
+        // If we have a valid reticle (hit-test result), always (re)place the
         // content at that location and choose the asset based on the currently
         // detected surface type. This allows:
         // - First tap on a wall → spawn wire.glb
         // - Second tap on the floor → replace with green cube
-        if (reticle.visible && currentSurfaceType) {
+        // Note: Check for valid reticle matrix and surface type, not just visibility
+        // (reticle may be hidden in debug mode when pointing at model to avoid occlusion)
+        if (reticle && reticle.matrix && currentSurfaceType) {
             // Create appropriate content based on detected surface type
             await createContentForSurface(currentSurfaceType);
             
@@ -1672,7 +1674,8 @@ function onXRFrame(timestamp, frame) {
             // 1. Haven't spawned yet AND time has elapsed (3-5 seconds) AND surface is stable
             // 2. OR user is too far from previous spawn and cooldown has passed AND surface is stable
             // 3. AND not currently spawning (prevent multiple concurrent spawns)
-            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning;
+            // 4. AND debug mode is OFF (in debug mode, only spawn on touch/manual placement)
+            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning && !debugMode;
             
             if (shouldSpawn) {
                 // Set spawning flag immediately to prevent concurrent spawns
