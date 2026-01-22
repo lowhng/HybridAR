@@ -207,113 +207,24 @@
         // Render first question
         renderQuestion();
 
-        // CRITICAL: Hide XR overlay to prevent compositor interference
-        // Even though it has pointer-events: none, removing it from render tree
-        // ensures clean compositor layer creation for the quiz
+        // Hide XR overlay to prevent compositor interference
         const xrOverlay = document.getElementById('xr-overlay');
         if (xrOverlay) {
             xrOverlay.style.display = 'none';
         }
 
-        // CRITICAL: Create a temporary compositor "hot" element
-        // This simulates what Instagram video overlay does - keeps compositor active
-        // We'll remove it after compositor is initialized
-        const tempCompositorHot = document.createElement('div');
-        tempCompositorHot.style.position = 'fixed';
-        tempCompositorHot.style.top = '0';
-        tempCompositorHot.style.left = '0';
-        tempCompositorHot.style.width = '1px';
-        tempCompositorHot.style.height = '1px';
-        tempCompositorHot.style.zIndex = '999998';
-        tempCompositorHot.style.pointerEvents = 'none';
-        tempCompositorHot.style.opacity = '0.01';
-        tempCompositorHot.style.transform = 'translateZ(0)';
-        document.body.appendChild(tempCompositorHot);
-
-        // Show quiz view (using display, not visibility, for cleaner state)
+        // Show quiz view
         quizView.classList.remove('hidden');
         
-        // CRITICAL: Force immediate layout calculation after showing
-        // This ensures iOS knows the element is visible
+        // Force layout calculation after showing
         void quizView.offsetHeight;
         
-        // CRITICAL iOS FIX: Add passive touch listeners to ensure scroll works
-        // This prevents any event interference
-        const ensureScrollWorks = () => {
-            if (quizScrollWrapper) {
-                // Add passive touch listeners to "prime" the scroll
-                const touchHandler = (e) => {
-                    // Don't prevent default - let iOS handle scroll naturally
-                };
-                quizScrollWrapper.addEventListener('touchstart', touchHandler, { passive: true });
-                quizScrollWrapper.addEventListener('touchmove', touchHandler, { passive: true });
-                quizScrollWrapper.addEventListener('touchend', touchHandler, { passive: true });
-            }
-        };
-        
-        // Reset scroll position
-        quizScrollWrapper.scrollTop = 0;
-        
-        // Force multiple layout calculations to ensure everything is measured
-        void quizView.offsetHeight;
-        void quizScrollWrapper.offsetHeight;
-        void quizScrollWrapper.scrollHeight;
-        void quizScrollWrapper.clientHeight;
-        void quizContent.offsetHeight;
-        
-        // Add touch listeners
-        ensureScrollWorks();
-        
-        // CRITICAL FIX: Wake up the iOS Safari scroll compositor
-        // This is THE KEY FIX - forces compositor initialization just like
-        // app switching or having an Instagram video call overlay does
-        // The freeze happens on finger lift (momentum scroll), so we need to
-        // ensure momentum scrolling compositor is fully initialized
-        requestAnimationFrame(() => {
-            // First frame: view should be painted now, force layout
+        // Reset scroll position (minimal scroll setup - should rarely be needed)
+        if (quizScrollWrapper) {
+            quizScrollWrapper.scrollTop = 0;
+            // Force layout to ensure proper rendering
             void quizScrollWrapper.offsetHeight;
-            void quizScrollWrapper.scrollHeight;
-            void quizScrollWrapper.clientHeight;
-            
-            requestAnimationFrame(() => {
-                // Second frame: now wake up the scroll compositor (including momentum)
-                forceIOSRepaint(quizScrollWrapper);
-                
-                // Third frame: ensure momentum compositor is fully ready
-                requestAnimationFrame(() => {
-                    // Force final layout and verify scroll is ready
-                    void quizScrollWrapper.offsetHeight;
-                    void quizScrollWrapper.scrollHeight;
-                    
-                    // CRITICAL: One more momentum scroll simulation to ensure
-                    // the compositor is ready for when user lifts finger
-                    if (quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
-                        // Simulate a momentum scroll by doing a quick scroll sequence
-                        quizScrollWrapper.scrollTop = 3;
-                        void quizScrollWrapper.offsetHeight;
-                        requestAnimationFrame(() => {
-                            quizScrollWrapper.scrollTop = 1;
-                            void quizScrollWrapper.offsetHeight;
-                            requestAnimationFrame(() => {
-                                quizScrollWrapper.scrollTop = 0;
-                                void quizScrollWrapper.offsetHeight;
-                                
-                                // Now remove the temporary compositor hot element
-                                // Compositor should be fully initialized by now
-                                if (tempCompositorHot && tempCompositorHot.parentNode) {
-                                    tempCompositorHot.parentNode.removeChild(tempCompositorHot);
-                                }
-                            });
-                        });
-                    } else {
-                        // Remove temp element even if no scrollable content
-                        if (tempCompositorHot && tempCompositorHot.parentNode) {
-                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
-                        }
-                    }
-                });
-            });
-        });
+        }
 
         // Set up back button handler
         if (backToARButton) {
@@ -486,6 +397,10 @@
                 if (currentQuestionIndex > 0) {
                     currentQuestionIndex--;
                     renderQuestion();
+                    // Reset scroll position when navigating
+                    if (quizScrollWrapper) {
+                        quizScrollWrapper.scrollTop = 0;
+                    }
                 }
             });
         }
@@ -496,6 +411,10 @@
                     if (currentQuestionIndex < currentQuiz.questions.length - 1) {
                         currentQuestionIndex++;
                         renderQuestion();
+                        // Reset scroll position when navigating
+                        if (quizScrollWrapper) {
+                            quizScrollWrapper.scrollTop = 0;
+                        }
                     }
                 } else {
                     if (window.Toast) {
@@ -567,7 +486,6 @@
         // Reset scroll position after content is rendered
         if (quizScrollWrapper) {
             quizScrollWrapper.scrollTop = 0;
-            // Force layout calculation
             void quizScrollWrapper.offsetHeight;
         }
 
@@ -578,6 +496,10 @@
                 currentQuestionIndex = 0;
                 userAnswers = [];
                 renderQuestion();
+                // Reset scroll position when restarting
+                if (quizScrollWrapper) {
+                    quizScrollWrapper.scrollTop = 0;
+                }
             });
         }
     }
@@ -588,7 +510,7 @@
     async function backToAR() {
         console.log('Returning to AR view');
         
-        // Hide quiz view
+        // Hide quiz view first
         if (quizView) {
             quizView.classList.add('hidden');
         }
@@ -598,16 +520,64 @@
             quizScrollWrapper.scrollTop = 0;
         }
 
+        // CRITICAL: Hide logo container immediately to prevent it from showing
+        const logoContainer = document.getElementById('logo-container');
+        if (logoContainer) {
+            logoContainer.classList.add('hidden');
+        }
+
+        // CRITICAL: Clean up AR resources and clear canvas BEFORE showing AR container
+        // This prevents the old start screen and spawned models from being visible
+        const arContainer = document.getElementById('ar-container');
+        if (arContainer) {
+            // Clear canvas before showing container
+            const canvas = arContainer.querySelector('canvas');
+            if (canvas) {
+                // Hide canvas first
+                canvas.style.display = 'none';
+                canvas.style.visibility = 'hidden';
+                canvas.style.opacity = '0';
+                
+                // Clear canvas content if renderer is available
+                if (window.WebXRAR && window.WebXRAR._renderer) {
+                    try {
+                        const renderer = window.WebXRAR._renderer;
+                        // Clear with opaque black to hide any previous content
+                        renderer.setClearColor(0x000000, 1);
+                        renderer.clear();
+                        // Reset back to transparent for next session
+                        renderer.setClearColor(0x000000, 0);
+                    } catch (e) {
+                        console.warn('Error clearing canvas:', e);
+                    }
+                }
+            }
+            
+            // Ensure container is hidden initially
+            arContainer.style.display = 'none';
+            arContainer.style.visibility = 'hidden';
+        }
+
+        // Clean up AR resources if cleanup function is available
+        if (window.WebXRAR && typeof window.WebXRAR.cleanup === 'function') {
+            try {
+                window.WebXRAR.cleanup();
+            } catch (e) {
+                console.warn('Error during AR cleanup:', e);
+            }
+        } else if (window.WebXRAR && window.WebXRAR.reset) {
+            // Fallback: use reset function to clear content
+            try {
+                window.WebXRAR.reset();
+            } catch (e) {
+                console.warn('Error during AR reset:', e);
+            }
+        }
+
         // Restore XR overlay (was hidden when quiz was shown)
         const xrOverlay = document.getElementById('xr-overlay');
         if (xrOverlay) {
             xrOverlay.style.display = '';
-        }
-
-        // Show AR container
-        const arContainer = document.getElementById('ar-container');
-        if (arContainer) {
-            arContainer.style.display = 'block';
         }
 
         // Reset quiz state

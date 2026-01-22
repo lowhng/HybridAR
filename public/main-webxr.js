@@ -284,10 +284,28 @@ async function initWebXR() {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
     }
     
+    // CRITICAL: Clear canvas before showing AR container to prevent old content from flashing
+    const existingCanvas = arContainer.querySelector('canvas');
+    if (existingCanvas && renderer) {
+        try {
+            // Clear canvas with opaque black to hide any previous content
+            renderer.setClearColor(0x000000, 1);
+            renderer.clear();
+            // Also try direct canvas clearing as fallback
+            const ctx = existingCanvas.getContext('webgl2') || existingCanvas.getContext('webgl');
+            if (ctx) {
+                ctx.clear(ctx.COLOR_BUFFER_BIT | ctx.DEPTH_BUFFER_BIT);
+            }
+            // Reset clear color back to transparent for AR session
+            renderer.setClearColor(0x000000, 0);
+        } catch (e) {
+            console.warn('Error clearing canvas during init:', e);
+        }
+    }
+    
     // Show AR container and canvas (in case they were hidden from previous session)
     arContainer.style.display = 'block';
     arContainer.style.visibility = 'visible';
-    const existingCanvas = arContainer.querySelector('canvas');
     if (existingCanvas) {
         existingCanvas.style.display = 'block';
         existingCanvas.style.visibility = 'visible';
@@ -381,6 +399,11 @@ async function initWebXR() {
         alpha: true,
         powerPreference: 'high-performance'
     });
+    
+    // Expose renderer for cleanup operations
+    if (window.WebXRAR) {
+        window.WebXRAR._renderer = renderer;
+    }
     
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1201,12 +1224,14 @@ function setupTapToPlace() {
     if (!xrSession) return;
     
     xrSession.addEventListener('select', async () => {
-        // If we have a visible reticle (hit-test result), always (re)place the
+        // If we have a valid reticle (hit-test result), always (re)place the
         // content at that location and choose the asset based on the currently
         // detected surface type. This allows:
         // - First tap on a wall → spawn wire.glb
         // - Second tap on the floor → replace with green cube
-        if (reticle.visible && currentSurfaceType) {
+        // Note: Check for valid reticle matrix and surface type, not just visibility
+        // (reticle may be hidden in debug mode when pointing at model to avoid occlusion)
+        if (reticle && reticle.matrix && currentSurfaceType) {
             // Create appropriate content based on detected surface type
             await createContentForSurface(currentSurfaceType);
             
@@ -1375,6 +1400,31 @@ function detectSurfaceType(hitPose) {
 }
 
 /**
+ * Checks if the reticle is pointing at/near the spawned model
+ * @returns {boolean} True if reticle is close to the model position
+ */
+function isReticlePointingAtModel() {
+    if (!isAnchored || !contentGroup || !reticle) {
+        return false;
+    }
+    
+    // Get reticle position
+    const reticlePos = _tempVector;
+    reticlePos.setFromMatrixPosition(reticle.matrix);
+    
+    // Get model position
+    const modelPos = _tempVector2;
+    modelPos.setFromMatrixPosition(contentGroup.matrix);
+    
+    // Calculate distance between reticle and model
+    const distance = reticlePos.distanceTo(modelPos);
+    
+    // Threshold: if reticle is within 0.3 meters of model, consider it "pointing at" the model
+    const OCCLUSION_THRESHOLD = 0.3;
+    return distance < OCCLUSION_THRESHOLD;
+}
+
+/**
  * Updates reticle appearance based on surface type
  * @param {string} surfaceType - 'wall' or 'floor'
  */
@@ -1499,9 +1549,16 @@ function onXRFrame(timestamp, frame) {
                         matrixToUse = _tempMatrix.elements;
                     }
                     
-                    reticle.visible = debugMode; // Only show reticle in debug mode
+                    // Update reticle matrix first so we can check its position
                     reticle.matrix.fromArray(matrixToUse);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
+                    
+                    // In debug mode, hide reticle if it's pointing at the model to avoid occlusion
+                    if (debugMode) {
+                        reticle.visible = !isReticlePointingAtModel();
+                    } else {
+                        reticle.visible = false;
+                    }
                     
                     // Track surface stability for auto-spawn (reuse temp vector to reduce allocations)
                     _tempVector.setFromMatrixPosition(reticle.matrix);
@@ -1555,8 +1612,17 @@ function onXRFrame(timestamp, frame) {
             reticle.position.copy(_tempVector);
             reticle.position.addScaledVector(_tempVector2, 1.0);
             reticle.lookAt(_tempVector);
-            reticle.visible = debugMode; // Only show reticle in debug mode
             reticle.matrixAutoUpdate = true;
+            
+            // Update matrix so we can check position for occlusion
+            reticle.updateMatrix();
+            
+            // In debug mode, hide reticle if it's pointing at the model to avoid occlusion
+            if (debugMode) {
+                reticle.visible = !isReticlePointingAtModel();
+            } else {
+                reticle.visible = false;
+            }
             
             // Infer surface type from gaze direction for reticle appearance
             const inferredType = inferSurfaceTypeFromGaze(_tempVector2);
@@ -1608,7 +1674,8 @@ function onXRFrame(timestamp, frame) {
             // 1. Haven't spawned yet AND time has elapsed (3-5 seconds) AND surface is stable
             // 2. OR user is too far from previous spawn and cooldown has passed AND surface is stable
             // 3. AND not currently spawning (prevent multiple concurrent spawns)
-            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning;
+            // 4. AND debug mode is OFF (in debug mode, only spawn on touch/manual placement)
+            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning && !debugMode;
             
             if (shouldSpawn) {
                 // Set spawning flag immediately to prevent concurrent spawns
@@ -2347,11 +2414,13 @@ if (typeof window !== 'undefined') {
     window.WebXRAR = {
         init: initWebXR,
         reset: resetAnchor,
+        cleanup: cleanupARResources,
         isAnchored: () => isAnchored,
         exitToQuiz: exitARToQuiz,
         getCurrentModelType: () => currentModelType,
         debugMode: () => debugMode,
         setDebugMode: (enabled) => { debugMode = enabled; },
+        _renderer: null, // Will be set after renderer is created
         _scriptLoaded: true,
         _loaded: true,
         _loadTime: Date.now()
