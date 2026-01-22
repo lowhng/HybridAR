@@ -19,7 +19,13 @@ body {
 /* Quiz page specific styles */
 body.quiz-page {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    overflow: auto;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    position: relative !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100vh;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Page transition animations */
@@ -533,15 +539,6 @@ body.fade-out {
 /* ============================================================================
    QUIZ PAGE - Modern, Simplified Design with Native Body Scrolling
    ============================================================================ */
-
-/* Quiz Page Body - Native scrolling, no nested containers */
-body.quiz-page {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    overflow-y: auto;
-    overflow-x: hidden;
-    -webkit-overflow-scrolling: touch;
-    min-height: 100vh;
-}
 
 /* Quiz Header Bar - Fixed at top */
 .quiz-header-bar {
