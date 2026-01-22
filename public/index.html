@@ -45,16 +45,6 @@
     <!-- Quiz Button (shown after 2s gaze) -->
     <button id="quiz-button" class="quiz-button hidden">Take Quiz</button>
 
-    <!-- Quiz View Container (hidden initially) -->
-    <div id="quiz-view" class="quiz-view hidden">
-        <div class="quiz-scroll-wrapper" id="quiz-scroll-wrapper">
-            <div class="quiz-container">
-                <div id="quiz-content"></div>
-                <button id="back-to-ar-button" class="back-to-ar-button">Back to AR</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Load Toast Notification System first (for error display) -->
     <script src="toast.js"></script>
     
@@ -94,6 +84,13 @@
     
     <!-- Load AR Controller (WebXR-only, will dynamically load main-webxr.js) -->
     <script src="ar-controller.js"></script>
+    
+    <script>
+        // Add fade-in animation on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.classList.add('fade-in');
+        });
+    </script>
 </body>
 </html>
 

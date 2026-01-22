@@ -1964,20 +1964,13 @@ async function exitARToQuiz() {
         renderer.setAnimationLoop(null);
     }
 
-    // Show quiz view using the stored model type
-    if (window.QuizSystem && window.QuizSystem.showQuiz) {
-        try {
-            await window.QuizSystem.showQuiz(modelTypeForQuiz);
-        } catch (error) {
-            console.error('Error showing quiz:', error);
-            // Reset flag if quiz failed to show
-            isExitingToQuiz = false;
-        }
-    } else {
-        console.error('QuizSystem not available');
-        // Reset flag if quiz system is not available
-        isExitingToQuiz = false;
-    }
+    // Add fade-out animation before navigation
+    document.body.classList.add('fade-out');
+    
+    // Wait for fade animation to complete, then navigate to quiz page
+    setTimeout(() => {
+        window.location.href = `quiz.html?model=${encodeURIComponent(modelTypeForQuiz)}`;
+    }, 300); // Match CSS animation duration
 }
 
 // ============================================================================

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Quiz - WebXR AR Experience</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="quiz-page">
+    <!-- Quiz View Container -->
+    <div id="quiz-view" class="quiz-view">
+        <div class="quiz-scroll-wrapper" id="quiz-scroll-wrapper">
+            <div class="quiz-container">
+                <div id="quiz-content"></div>
+                <button id="back-to-ar-button" class="back-to-ar-button">Back to AR</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Load Toast Notification System first (for error display) -->
+    <script src="toast.js"></script>
+    
+    <!-- Load Quiz System -->
+    <script src="quiz.js"></script>
+    
+    <script>
+        // Initialize quiz on page load
+        (function() {
+            // Add fade-in class to body for transition
+            document.body.classList.add('fade-in');
+            
+            // Parse model type from URL parameter
+            const urlParams = new URLSearchParams(window.location.search);
+            const modelType = urlParams.get('model');
+            
+            if (!modelType) {
+                console.error('No model type provided in URL');
+                if (window.Toast) {
+                    window.Toast.error('No quiz model specified. Redirecting to AR...', 'Quiz Error', 3000);
+                }
+                // Redirect to index after a delay
+                setTimeout(() => {
+                    window.location.href = 'index.html';
+                }, 3000);
+                return;
+            }
+            
+            // Show quiz once QuizSystem is available
+            if (window.QuizSystem && window.QuizSystem.showQuiz) {
+                window.QuizSystem.showQuiz(modelType).catch(error => {
+                    console.error('Error showing quiz:', error);
+                    if (window.Toast) {
+                        window.Toast.error('Failed to load quiz. Redirecting to AR...', 'Quiz Error', 3000);
+                    }
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 3000);
+                });
+            } else {
+                // Wait for QuizSystem to be available
+                const checkQuizSystem = setInterval(() => {
+                    if (window.QuizSystem && window.QuizSystem.showQuiz) {
+                        clearInterval(checkQuizSystem);
+                        window.QuizSystem.showQuiz(modelType).catch(error => {
+                            console.error('Error showing quiz:', error);
+                            if (window.Toast) {
+                                window.Toast.error('Failed to load quiz. Redirecting to AR...', 'Quiz Error', 3000);
+                            }
+                            setTimeout(() => {
+                                window.location.href = 'index.html';
+                            }, 3000);
+                        });
+                    }
+                }, 100);
+                
+                // Timeout after 5 seconds
+                setTimeout(() => {
+                    clearInterval(checkQuizSystem);
+                    if (!window.QuizSystem) {
+                        console.error('QuizSystem not available after timeout');
+                        if (window.Toast) {
+                            window.Toast.error('Quiz system failed to load. Redirecting to AR...', 'Quiz Error', 3000);
+                        }
+                        setTimeout(() => {
+                            window.location.href = 'index.html';
+                        }, 3000);
+                    }
+                }, 5000);
+            }
+        })();
+    </script>
+</body>
+</html>
