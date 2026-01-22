@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Quiz - WebXR AR Experience</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -42,6 +45,27 @@
     <script src="quiz.js"></script>
     
     <script>
+        // CRITICAL: Force iOS scroll compositor initialization
+        // This must happen immediately on page load, before any other code
+        (function initScroll() {
+            // Force a layout calculation to wake up the compositor
+            void document.body.offsetHeight;
+            
+            // Trigger a micro-scroll to initialize momentum scrolling
+            window.scrollTo(0, 0);
+            
+            // Force another layout after scroll
+            requestAnimationFrame(() => {
+                void document.body.offsetHeight;
+                // Do a tiny scroll to ensure compositor is ready
+                window.scrollTo(0, 1);
+                requestAnimationFrame(() => {
+                    window.scrollTo(0, 0);
+                    void document.body.offsetHeight;
+                });
+            });
+        })();
+        
         // Initialize quiz on page load
         (function() {
             // Add fade-in class to body for transition
@@ -64,7 +88,12 @@
             
             // Show quiz once QuizSystem is available
             if (window.QuizSystem && window.QuizSystem.showQuiz) {
-                window.QuizSystem.showQuiz(modelType).catch(error => {
+                window.QuizSystem.showQuiz(modelType).then(() => {
+                    // After quiz content is loaded, force scroll initialization
+                    setTimeout(() => {
+                        forceScrollInit();
+                    }, 100);
+                }).catch(error => {
                     console.error('Error showing quiz:', error);
                     if (window.Toast) {
                         window.Toast.error('Failed to load quiz. Redirecting to AR...', 'Quiz Error', 3000);
@@ -78,7 +107,12 @@
                 const checkQuizSystem = setInterval(() => {
                     if (window.QuizSystem && window.QuizSystem.showQuiz) {
                         clearInterval(checkQuizSystem);
-                        window.QuizSystem.showQuiz(modelType).catch(error => {
+                        window.QuizSystem.showQuiz(modelType).then(() => {
+                            // After quiz content is loaded, force scroll initialization
+                            setTimeout(() => {
+                                forceScrollInit();
+                            }, 100);
+                        }).catch(error => {
                             console.error('Error showing quiz:', error);
                             if (window.Toast) {
                                 window.Toast.error('Failed to load quiz. Redirecting to AR...', 'Quiz Error', 3000);
@@ -105,6 +139,60 @@
                 }, 5000);
             }
         })();
+        
+        // Aggressive scroll initialization function
+        function forceScrollInit() {
+            // Force multiple layout calculations
+            void document.body.offsetHeight;
+            void document.documentElement.scrollHeight;
+            void document.documentElement.clientHeight;
+            
+            // Check if page is scrollable
+            const isScrollable = document.documentElement.scrollHeight > document.documentElement.clientHeight;
+            
+            if (isScrollable) {
+                // Do a series of micro-scrolls to wake up compositor
+                let scrollPos = 0;
+                const scrollSequence = () => {
+                    window.scrollTo(0, scrollPos);
+                    void document.body.offsetHeight;
+                    
+                    if (scrollPos === 0) {
+                        scrollPos = 2;
+                        requestAnimationFrame(scrollSequence);
+                    } else if (scrollPos === 2) {
+                        scrollPos = 1;
+                        requestAnimationFrame(scrollSequence);
+                    } else {
+                        scrollPos = 0;
+                        window.scrollTo(0, 0);
+                        void document.body.offsetHeight;
+                    }
+                };
+                
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(scrollSequence);
+                });
+            }
+            
+            // Add passive touch listeners to ensure scroll works
+            const touchHandler = () => {
+                // Just being present helps iOS initialize scroll
+            };
+            
+            document.addEventListener('touchstart', touchHandler, { passive: true, once: true });
+            document.addEventListener('touchmove', touchHandler, { passive: true, once: true });
+        }
+        
+        // Also try to initialize on first touch
+        let touchInitDone = false;
+        document.addEventListener('touchstart', function initOnTouch() {
+            if (!touchInitDone) {
+                touchInitDone = true;
+                forceScrollInit();
+                document.removeEventListener('touchstart', initOnTouch);
+            }
+        }, { passive: true, once: true });
     </script>
 </body>
 </html>

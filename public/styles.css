@@ -26,6 +26,12 @@ body.quiz-page {
     height: auto !important;
     min-height: 100vh;
     -webkit-overflow-scrolling: touch;
+    /* Force hardware acceleration for smooth scrolling */
+    transform: translateZ(0);
+    -webkit-transform: translateZ(0);
+    /* Ensure body can scroll */
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Page transition animations */

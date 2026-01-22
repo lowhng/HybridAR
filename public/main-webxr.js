@@ -1968,8 +1968,11 @@ async function exitARToQuiz() {
     document.body.classList.add('fade-out');
     
     // Wait for fade animation to complete, then navigate to quiz page
+    // Use replace to ensure fresh page load and clear any WebXR state
     setTimeout(() => {
-        window.location.href = `quiz.html?model=${encodeURIComponent(modelTypeForQuiz)}`;
+        // Add timestamp to prevent caching issues
+        const timestamp = Date.now();
+        window.location.replace(`quiz.html?model=${encodeURIComponent(modelTypeForQuiz)}&_t=${timestamp}`);
     }, 300); // Match CSS animation duration
 }
 
