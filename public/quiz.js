@@ -30,23 +30,58 @@
     
     /**
      * Forces iOS Safari to properly initialize scroll compositor.
-     * This fixes the freeze-on-first-scroll bug on iOS Safari.
+     * This fixes the freeze-on-first-scroll bug on iOS Safari, specifically
+     * the freeze that happens when lifting finger (momentum scroll issue).
+     * More aggressive version that simulates what app switching or video overlay does.
      * @param {HTMLElement} element - The scrollable element to fix
      */
     function forceIOSRepaint(element) {
         if (!element) return;
         
-        // Force a synchronous layout/reflow
+        // Force multiple synchronous layout/reflows to wake up compositor
         void element.offsetHeight;
+        void element.scrollHeight;
+        void element.clientHeight;
         
-        // Trigger a micro-scroll to wake up the scroll compositor
-        // This must happen after the element is visible and laid out
-        element.scrollTop = 0.5;
+        const maxScroll = element.scrollHeight - element.clientHeight;
         
-        // Use RAF to ensure scroll happens after paint
-        requestAnimationFrame(() => {
-            element.scrollTop = 0;
-        });
+        if (maxScroll > 0) {
+            // CRITICAL: Do a visible scroll that will trigger momentum scroll compositor
+            // Scroll enough to ensure momentum scrolling is initialized
+            element.scrollTop = Math.min(10, maxScroll);
+            
+            // Force immediate reflow to commit the scroll
+            void element.offsetHeight;
+            void element.scrollTop; // Force read to ensure layout
+            
+            // Wait for paint, then reset
+            requestAnimationFrame(() => {
+                // Reset scroll position
+                element.scrollTop = 0;
+                void element.offsetHeight;
+                
+                // CRITICAL: Do one more small scroll to ensure momentum compositor is ready
+                // This simulates what happens when user lifts finger - momentum needs to be ready
+                requestAnimationFrame(() => {
+                    if (maxScroll > 0) {
+                        element.scrollTop = 2;
+                        void element.offsetHeight;
+                        requestAnimationFrame(() => {
+                            element.scrollTop = 0;
+                            void element.offsetHeight;
+                        });
+                    }
+                });
+            });
+        } else {
+            // Even if no scrollable content, still trigger compositor
+            element.scrollTop = 0.5;
+            void element.offsetHeight;
+            requestAnimationFrame(() => {
+                element.scrollTop = 0;
+                void element.offsetHeight;
+            });
+        }
     }
 
     // ============================================================================
@@ -180,8 +215,27 @@
             xrOverlay.style.display = 'none';
         }
 
+        // CRITICAL: Create a temporary compositor "hot" element
+        // This simulates what Instagram video overlay does - keeps compositor active
+        // We'll remove it after compositor is initialized
+        const tempCompositorHot = document.createElement('div');
+        tempCompositorHot.style.position = 'fixed';
+        tempCompositorHot.style.top = '0';
+        tempCompositorHot.style.left = '0';
+        tempCompositorHot.style.width = '1px';
+        tempCompositorHot.style.height = '1px';
+        tempCompositorHot.style.zIndex = '999998';
+        tempCompositorHot.style.pointerEvents = 'none';
+        tempCompositorHot.style.opacity = '0.01';
+        tempCompositorHot.style.transform = 'translateZ(0)';
+        document.body.appendChild(tempCompositorHot);
+
         // Show quiz view (using display, not visibility, for cleaner state)
         quizView.classList.remove('hidden');
+        
+        // CRITICAL: Force immediate layout calculation after showing
+        // This ensures iOS knows the element is visible
+        void quizView.offsetHeight;
         
         // CRITICAL iOS FIX: Add passive touch listeners to ensure scroll works
         // This prevents any event interference
@@ -200,11 +254,12 @@
         // Reset scroll position
         quizScrollWrapper.scrollTop = 0;
         
-        // Force layout calculations
+        // Force multiple layout calculations to ensure everything is measured
         void quizView.offsetHeight;
         void quizScrollWrapper.offsetHeight;
-        void quizContent.offsetHeight;
         void quizScrollWrapper.scrollHeight;
+        void quizScrollWrapper.clientHeight;
+        void quizContent.offsetHeight;
         
         // Add touch listeners
         ensureScrollWorks();
@@ -212,15 +267,51 @@
         // CRITICAL FIX: Wake up the iOS Safari scroll compositor
         // This is THE KEY FIX - forces compositor initialization just like
         // app switching or having an Instagram video call overlay does
-        // We use RAF to ensure the view is fully painted before initializing scroll
+        // The freeze happens on finger lift (momentum scroll), so we need to
+        // ensure momentum scrolling compositor is fully initialized
         requestAnimationFrame(() => {
-            // Now that the view is painted, wake up the scroll compositor
-            forceIOSRepaint(quizScrollWrapper);
+            // First frame: view should be painted now, force layout
+            void quizScrollWrapper.offsetHeight;
+            void quizScrollWrapper.scrollHeight;
+            void quizScrollWrapper.clientHeight;
             
-            // Additional frame to ensure compositor is fully ready
             requestAnimationFrame(() => {
-                // Force one final layout calculation to ensure everything is settled
-                void quizScrollWrapper.offsetHeight;
+                // Second frame: now wake up the scroll compositor (including momentum)
+                forceIOSRepaint(quizScrollWrapper);
+                
+                // Third frame: ensure momentum compositor is fully ready
+                requestAnimationFrame(() => {
+                    // Force final layout and verify scroll is ready
+                    void quizScrollWrapper.offsetHeight;
+                    void quizScrollWrapper.scrollHeight;
+                    
+                    // CRITICAL: One more momentum scroll simulation to ensure
+                    // the compositor is ready for when user lifts finger
+                    if (quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
+                        // Simulate a momentum scroll by doing a quick scroll sequence
+                        quizScrollWrapper.scrollTop = 3;
+                        void quizScrollWrapper.offsetHeight;
+                        requestAnimationFrame(() => {
+                            quizScrollWrapper.scrollTop = 1;
+                            void quizScrollWrapper.offsetHeight;
+                            requestAnimationFrame(() => {
+                                quizScrollWrapper.scrollTop = 0;
+                                void quizScrollWrapper.offsetHeight;
+                                
+                                // Now remove the temporary compositor hot element
+                                // Compositor should be fully initialized by now
+                                if (tempCompositorHot && tempCompositorHot.parentNode) {
+                                    tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                                }
+                            });
+                        });
+                    } else {
+                        // Remove temp element even if no scrollable content
+                        if (tempCompositorHot && tempCompositorHot.parentNode) {
+                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                        }
+                    }
+                });
             });
         });
 
