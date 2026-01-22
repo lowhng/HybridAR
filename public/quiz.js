@@ -510,7 +510,7 @@
     async function backToAR() {
         console.log('Returning to AR view');
         
-        // Hide quiz view
+        // Hide quiz view first
         if (quizView) {
             quizView.classList.add('hidden');
         }
@@ -520,16 +520,64 @@
             quizScrollWrapper.scrollTop = 0;
         }
 
+        // CRITICAL: Hide logo container immediately to prevent it from showing
+        const logoContainer = document.getElementById('logo-container');
+        if (logoContainer) {
+            logoContainer.classList.add('hidden');
+        }
+
+        // CRITICAL: Clean up AR resources and clear canvas BEFORE showing AR container
+        // This prevents the old start screen and spawned models from being visible
+        const arContainer = document.getElementById('ar-container');
+        if (arContainer) {
+            // Clear canvas before showing container
+            const canvas = arContainer.querySelector('canvas');
+            if (canvas) {
+                // Hide canvas first
+                canvas.style.display = 'none';
+                canvas.style.visibility = 'hidden';
+                canvas.style.opacity = '0';
+                
+                // Clear canvas content if renderer is available
+                if (window.WebXRAR && window.WebXRAR._renderer) {
+                    try {
+                        const renderer = window.WebXRAR._renderer;
+                        // Clear with opaque black to hide any previous content
+                        renderer.setClearColor(0x000000, 1);
+                        renderer.clear();
+                        // Reset back to transparent for next session
+                        renderer.setClearColor(0x000000, 0);
+                    } catch (e) {
+                        console.warn('Error clearing canvas:', e);
+                    }
+                }
+            }
+            
+            // Ensure container is hidden initially
+            arContainer.style.display = 'none';
+            arContainer.style.visibility = 'hidden';
+        }
+
+        // Clean up AR resources if cleanup function is available
+        if (window.WebXRAR && typeof window.WebXRAR.cleanup === 'function') {
+            try {
+                window.WebXRAR.cleanup();
+            } catch (e) {
+                console.warn('Error during AR cleanup:', e);
+            }
+        } else if (window.WebXRAR && window.WebXRAR.reset) {
+            // Fallback: use reset function to clear content
+            try {
+                window.WebXRAR.reset();
+            } catch (e) {
+                console.warn('Error during AR reset:', e);
+            }
+        }
+
         // Restore XR overlay (was hidden when quiz was shown)
         const xrOverlay = document.getElementById('xr-overlay');
         if (xrOverlay) {
             xrOverlay.style.display = '';
-        }
-
-        // Show AR container
-        const arContainer = document.getElementById('ar-container');
-        if (arContainer) {
-            arContainer.style.display = 'block';
         }
 
         // Reset quiz state

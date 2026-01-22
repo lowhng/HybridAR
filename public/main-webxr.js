@@ -284,10 +284,28 @@ async function initWebXR() {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
     }
     
+    // CRITICAL: Clear canvas before showing AR container to prevent old content from flashing
+    const existingCanvas = arContainer.querySelector('canvas');
+    if (existingCanvas && renderer) {
+        try {
+            // Clear canvas with opaque black to hide any previous content
+            renderer.setClearColor(0x000000, 1);
+            renderer.clear();
+            // Also try direct canvas clearing as fallback
+            const ctx = existingCanvas.getContext('webgl2') || existingCanvas.getContext('webgl');
+            if (ctx) {
+                ctx.clear(ctx.COLOR_BUFFER_BIT | ctx.DEPTH_BUFFER_BIT);
+            }
+            // Reset clear color back to transparent for AR session
+            renderer.setClearColor(0x000000, 0);
+        } catch (e) {
+            console.warn('Error clearing canvas during init:', e);
+        }
+    }
+    
     // Show AR container and canvas (in case they were hidden from previous session)
     arContainer.style.display = 'block';
     arContainer.style.visibility = 'visible';
-    const existingCanvas = arContainer.querySelector('canvas');
     if (existingCanvas) {
         existingCanvas.style.display = 'block';
         existingCanvas.style.visibility = 'visible';
@@ -381,6 +399,11 @@ async function initWebXR() {
         alpha: true,
         powerPreference: 'high-performance'
     });
+    
+    // Expose renderer for cleanup operations
+    if (window.WebXRAR) {
+        window.WebXRAR._renderer = renderer;
+    }
     
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -2347,11 +2370,13 @@ if (typeof window !== 'undefined') {
     window.WebXRAR = {
         init: initWebXR,
         reset: resetAnchor,
+        cleanup: cleanupARResources,
         isAnchored: () => isAnchored,
         exitToQuiz: exitARToQuiz,
         getCurrentModelType: () => currentModelType,
         debugMode: () => debugMode,
         setDebugMode: (enabled) => { debugMode = enabled; },
+        _renderer: null, // Will be set after renderer is created
         _scriptLoaded: true,
         _loaded: true,
         _loadTime: Date.now()
