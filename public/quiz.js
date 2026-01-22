@@ -215,8 +215,20 @@
             xrOverlay.style.display = 'none';
         }
 
-        // NOTE: Removed temporary compositor hot element as it was causing interference
-        // The XR session cleanup and proper timing should be sufficient
+        // CRITICAL: Create a temporary compositor "hot" element
+        // This simulates what Instagram video overlay does - keeps compositor active
+        // We'll remove it after compositor is initialized
+        const tempCompositorHot = document.createElement('div');
+        tempCompositorHot.style.position = 'fixed';
+        tempCompositorHot.style.top = '0';
+        tempCompositorHot.style.left = '0';
+        tempCompositorHot.style.width = '1px';
+        tempCompositorHot.style.height = '1px';
+        tempCompositorHot.style.zIndex = '999998';
+        tempCompositorHot.style.pointerEvents = 'none';
+        tempCompositorHot.style.opacity = '0.01';
+        tempCompositorHot.style.transform = 'translateZ(0)';
+        document.body.appendChild(tempCompositorHot);
 
         // Show quiz view (using display, not visibility, for cleaner state)
         quizView.classList.remove('hidden');
@@ -289,8 +301,19 @@
                             requestAnimationFrame(() => {
                                 quizScrollWrapper.scrollTop = 0;
                                 void quizScrollWrapper.offsetHeight;
+                                
+                                // Now remove the temporary compositor hot element
+                                // Compositor should be fully initialized by now
+                                if (tempCompositorHot && tempCompositorHot.parentNode) {
+                                    tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                                }
                             });
                         });
+                    } else {
+                        // Remove temp element even if no scrollable content
+                        if (tempCompositorHot && tempCompositorHot.parentNode) {
+                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                        }
                     }
                         });
                     });
