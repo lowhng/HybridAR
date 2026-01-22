@@ -543,18 +543,6 @@ body {
     -webkit-transform: translateZ(0);
 }
 
-/* Compositor wake animation - forces iOS Safari to initialize the compositor system
-   CSS animations are compositor-backed, so this helps wake up the scroll compositor */
-@keyframes compositor-wake {
-    0% { transform: translateZ(0); }
-    50% { transform: translateZ(1px); }
-    100% { transform: translateZ(0); }
-}
-
-.quiz-scroll-wrapper.compositor-wake {
-    animation: compositor-wake 0.1s ease-out;
-}
-
 .quiz-container {
     width: 100%;
     max-width: 800px;
