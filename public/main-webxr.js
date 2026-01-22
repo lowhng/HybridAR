@@ -1398,6 +1398,31 @@ function detectSurfaceType(hitPose) {
 }
 
 /**
+ * Checks if the reticle is pointing at/near the spawned model
+ * @returns {boolean} True if reticle is close to the model position
+ */
+function isReticlePointingAtModel() {
+    if (!isAnchored || !contentGroup || !reticle) {
+        return false;
+    }
+    
+    // Get reticle position
+    const reticlePos = _tempVector;
+    reticlePos.setFromMatrixPosition(reticle.matrix);
+    
+    // Get model position
+    const modelPos = _tempVector2;
+    modelPos.setFromMatrixPosition(contentGroup.matrix);
+    
+    // Calculate distance between reticle and model
+    const distance = reticlePos.distanceTo(modelPos);
+    
+    // Threshold: if reticle is within 0.3 meters of model, consider it "pointing at" the model
+    const OCCLUSION_THRESHOLD = 0.3;
+    return distance < OCCLUSION_THRESHOLD;
+}
+
+/**
  * Updates reticle appearance based on surface type
  * @param {string} surfaceType - 'wall' or 'floor'
  */
@@ -1522,9 +1547,16 @@ function onXRFrame(timestamp, frame) {
                         matrixToUse = _tempMatrix.elements;
                     }
                     
-                    reticle.visible = debugMode; // Only show reticle in debug mode
+                    // Update reticle matrix first so we can check its position
                     reticle.matrix.fromArray(matrixToUse);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
+                    
+                    // In debug mode, hide reticle if it's pointing at the model to avoid occlusion
+                    if (debugMode) {
+                        reticle.visible = !isReticlePointingAtModel();
+                    } else {
+                        reticle.visible = false;
+                    }
                     
                     // Track surface stability for auto-spawn (reuse temp vector to reduce allocations)
                     _tempVector.setFromMatrixPosition(reticle.matrix);
@@ -1578,8 +1610,17 @@ function onXRFrame(timestamp, frame) {
             reticle.position.copy(_tempVector);
             reticle.position.addScaledVector(_tempVector2, 1.0);
             reticle.lookAt(_tempVector);
-            reticle.visible = debugMode; // Only show reticle in debug mode
             reticle.matrixAutoUpdate = true;
+            
+            // Update matrix so we can check position for occlusion
+            reticle.updateMatrix();
+            
+            // In debug mode, hide reticle if it's pointing at the model to avoid occlusion
+            if (debugMode) {
+                reticle.visible = !isReticlePointingAtModel();
+            } else {
+                reticle.visible = false;
+            }
             
             // Infer surface type from gaze direction for reticle appearance
             const inferredType = inferSurfaceTypeFromGaze(_tempVector2);
