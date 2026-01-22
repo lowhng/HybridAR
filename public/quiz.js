@@ -212,22 +212,15 @@
         // CRITICAL FIX: Wake up the iOS Safari scroll compositor
         // This is THE KEY FIX - forces compositor initialization just like
         // app switching or having an Instagram video call overlay does
-        forceIOSRepaint(quizScrollWrapper);
-        
-        // iOS Safari needs the scroll to be "used" before it works properly
-        // Programmatically scroll a tiny amount to wake up the scroll compositor
+        // We use RAF to ensure the view is fully painted before initializing scroll
         requestAnimationFrame(() => {
+            // Now that the view is painted, wake up the scroll compositor
+            forceIOSRepaint(quizScrollWrapper);
+            
+            // Additional frame to ensure compositor is fully ready
             requestAnimationFrame(() => {
-                // Scroll down 1px
-                quizScrollWrapper.scrollTop = 1;
-                // Force reflow
+                // Force one final layout calculation to ensure everything is settled
                 void quizScrollWrapper.offsetHeight;
-                requestAnimationFrame(() => {
-                    // Scroll back to top
-                    quizScrollWrapper.scrollTop = 0;
-                    // Force one more layout to ensure it's applied
-                    void quizScrollWrapper.offsetHeight;
-                });
             });
         });
 
