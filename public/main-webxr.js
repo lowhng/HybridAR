@@ -126,6 +126,7 @@ let isAnchored = false;
 let xrSession = null;
 let xrReferenceSpace = null;
 let xrHitTestSource = null;
+let xrSelectHandler = null; // Store select event handler for cleanup
 let currentSurfaceType = null; // 'floor' or 'wall'
 let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), etc.
 let isExitingToQuiz = false; // Flag to prevent returnToStartScreen when exiting to quiz
@@ -1200,7 +1201,13 @@ function inferSurfaceTypeFromGaze(direction) {
 function setupTapToPlace() {
     if (!xrSession) return;
     
-    xrSession.addEventListener('select', async () => {
+    // Remove existing handler if any
+    if (xrSelectHandler && xrSession) {
+        xrSession.removeEventListener('select', xrSelectHandler);
+    }
+    
+    // Create and store the handler
+    xrSelectHandler = async () => {
         // If we have a visible reticle (hit-test result), always (re)place the
         // content at that location and choose the asset based on the currently
         // detected surface type. This allows:
@@ -1306,7 +1313,10 @@ function setupTapToPlace() {
                 console.log(`Content placed in front of camera as ${inferredSurfaceType}`);
             }
         }
-    });
+    };
+    
+    // Add the handler to the session
+    xrSession.addEventListener('select', xrSelectHandler);
 }
 
 // ============================================================================
@@ -1953,6 +1963,9 @@ async function exitARToQuiz() {
     // Hide quiz button
     hideQuizButton();
 
+    // Store session reference before ending (needed for cleanup)
+    const sessionToCleanup = xrSession;
+
     // End XR session and wait for it to actually end
     if (xrSession) {
         // Create a promise that resolves when session ends
@@ -1974,6 +1987,28 @@ async function exitARToQuiz() {
         renderer.setAnimationLoop(null);
     }
 
+    // CRITICAL: Disconnect renderer from XR session to prevent interference
+    if (renderer && renderer.xr && renderer.xr.isPresenting) {
+        try {
+            await renderer.xr.setSession(null);
+            console.log('Renderer disconnected from XR session');
+        } catch (e) {
+            console.warn('Error disconnecting renderer from XR session:', e);
+        }
+    }
+
+    // Remove XR event listeners to prevent interference
+    // Use stored session reference since xrSession is now null
+    if (sessionToCleanup && xrSelectHandler) {
+        try {
+            sessionToCleanup.removeEventListener('select', xrSelectHandler);
+            xrSelectHandler = null;
+            console.log('XR select event listener removed');
+        } catch (e) {
+            console.warn('Error removing XR select listener:', e);
+        }
+    }
+
     // CRITICAL: Wait for compositor to fully transition from XR to DOM mode
     // This gives iOS time to release XR resources and reinitialize compositor
     await new Promise(resolve => {
@@ -1990,8 +2025,30 @@ async function exitARToQuiz() {
         arContainer.style.display = 'none';
         const canvas = arContainer.querySelector('canvas');
         if (canvas) {
+            // Clear the canvas to ensure WebGL context is properly deactivated
+            if (renderer) {
+                try {
+                    renderer.setClearColor(0x000000, 1);
+                    renderer.clear();
+                    renderer.setClearColor(0x000000, 0); // Reset for next session
+                } catch (e) {
+                    console.warn('Error clearing renderer:', e);
+                }
+            }
+            
+            // Also try direct WebGL context clearing
+            try {
+                const ctx = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                if (ctx) {
+                    ctx.clear(ctx.COLOR_BUFFER_BIT | ctx.DEPTH_BUFFER_BIT);
+                }
+            } catch (e) {
+                console.warn('Error clearing WebGL context:', e);
+            }
+            
             canvas.style.display = 'none';
             canvas.style.visibility = 'hidden';
+            canvas.style.opacity = '0';
         }
     }
 
