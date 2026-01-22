@@ -1937,6 +1937,8 @@ function hideQuizButton() {
 
 /**
  * Exits AR and shows quiz view
+ * CRITICAL: Must properly clean up WebXR/WebGL resources before showing quiz
+ * to ensure iOS Safari's scroll compositor initializes correctly
  */
 async function exitARToQuiz() {
     if (!currentModelType) {
@@ -1953,18 +1955,59 @@ async function exitARToQuiz() {
     // Hide quiz button
     hideQuizButton();
 
-    // End XR session
-    if (xrSession) {
-        xrSession.end();
-        xrSession = null;
-    }
-
-    // Stop render loop
+    // CRITICAL: Stop render loop FIRST to prevent any more GPU work
     if (renderer && renderer.setAnimationLoop) {
         renderer.setAnimationLoop(null);
     }
 
-    // Show quiz view using the stored model type
+    // CRITICAL: Force WebGL context loss to release GPU resources
+    // This helps iOS Safari transition from WebGL rendering to DOM scrolling
+    if (renderer) {
+        try {
+            const gl = renderer.getContext();
+            if (gl) {
+                const ext = gl.getExtension('WEBGL_lose_context');
+                if (ext) {
+                    console.log('Forcing WebGL context loss for iOS compositor cleanup');
+                    ext.loseContext();
+                }
+            }
+        } catch (e) {
+            console.warn('Could not force WebGL context loss:', e);
+        }
+    }
+
+    // CRITICAL: Wait for XR session to fully end before showing quiz
+    // The session.end() is asynchronous - we must wait for the 'end' event
+    if (xrSession) {
+        try {
+            await new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    console.warn('XR session end timed out, proceeding anyway');
+                    resolve();
+                }, 2000); // 2 second timeout as safety
+
+                xrSession.addEventListener('end', () => {
+                    clearTimeout(timeout);
+                    console.log('XR session ended successfully');
+                    resolve();
+                }, { once: true });
+
+                xrSession.end();
+            });
+        } catch (e) {
+            console.warn('Error ending XR session:', e);
+        }
+        xrSession = null;
+    }
+
+    // CRITICAL: Give iOS time to fully clean up WebGL/compositor resources
+    // This delay allows the GPU context to be released before DOM scrolling initializes
+    // Increased delay to 300ms for more aggressive cleanup
+    console.log('Waiting for iOS compositor cleanup...');
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    // NOW show quiz view - compositor should be ready for DOM scrolling
     if (window.QuizSystem && window.QuizSystem.showQuiz) {
         try {
             await window.QuizSystem.showQuiz(modelTypeForQuiz);

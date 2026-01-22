@@ -237,6 +237,13 @@
         // This ensures iOS knows the element is visible
         void quizView.offsetHeight;
         
+        // CRITICAL: Brief visibility toggle to force compositor refresh
+        // This simulates what happens during app switching - forces a full repaint
+        quizView.style.visibility = 'hidden';
+        void quizView.offsetHeight;
+        quizView.style.visibility = 'visible';
+        void quizView.offsetHeight;
+        
         // CRITICAL iOS FIX: Add passive touch listeners to ensure scroll works
         // This prevents any event interference
         const ensureScrollWorks = () => {
@@ -264,7 +271,43 @@
         // Add touch listeners
         ensureScrollWorks();
         
-        // CRITICAL FIX: Wake up the iOS Safari scroll compositor
+        // CRITICAL FIX #1: Toggle -webkit-overflow-scrolling to force scroll system reinitialization
+        // This explicitly tells iOS to tear down and rebuild the scroll compositor
+        quizScrollWrapper.style.webkitOverflowScrolling = 'auto';
+        void quizScrollWrapper.offsetHeight; // Force reflow
+        quizScrollWrapper.style.webkitOverflowScrolling = 'touch';
+        void quizScrollWrapper.offsetHeight; // Force reflow again
+        
+        // CRITICAL FIX #1b: Toggle will-change to force compositor layer creation
+        quizScrollWrapper.style.willChange = 'scroll-position';
+        void quizScrollWrapper.offsetHeight;
+        
+        // CRITICAL FIX #1c: Force multiple getBoundingClientRect calls to trigger layout
+        quizScrollWrapper.getBoundingClientRect();
+        quizContent.getBoundingClientRect();
+        quizView.getBoundingClientRect();
+        
+        // CRITICAL FIX #2: Add compositor wake animation
+        // CSS animations are compositor-backed and force iOS to initialize the compositor system
+        quizScrollWrapper.classList.add('compositor-wake');
+        
+        // CRITICAL FIX #2b: Trigger window-level scroll to wake up system compositor
+        // App switching triggers system-level compositor refresh - try to simulate this
+        const originalScrollY = window.scrollY;
+        window.scrollTo(0, 1);
+        void document.documentElement.offsetHeight;
+        window.scrollTo(0, originalScrollY);
+        void document.documentElement.offsetHeight;
+        
+        // CRITICAL FIX #2c: Brief zoom toggle to force full compositor refresh
+        // This sometimes forces iOS to recalculate everything, similar to app switching
+        const originalZoom = document.body.style.zoom;
+        document.body.style.zoom = '0.9999';
+        void document.body.offsetHeight;
+        document.body.style.zoom = originalZoom || '1';
+        void document.body.offsetHeight;
+        
+        // CRITICAL FIX #3: Wake up the iOS Safari scroll compositor
         // This is THE KEY FIX - forces compositor initialization just like
         // app switching or having an Instagram video call overlay does
         // The freeze happens on finger lift (momentum scroll), so we need to
@@ -285,30 +328,79 @@
                     void quizScrollWrapper.offsetHeight;
                     void quizScrollWrapper.scrollHeight;
                     
-                    // CRITICAL: One more momentum scroll simulation to ensure
-                    // the compositor is ready for when user lifts finger
-                    if (quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
-                        // Simulate a momentum scroll by doing a quick scroll sequence
-                        quizScrollWrapper.scrollTop = 3;
-                        void quizScrollWrapper.offsetHeight;
-                        requestAnimationFrame(() => {
-                            quizScrollWrapper.scrollTop = 1;
+                    // CRITICAL FIX #4: Use native scrollIntoView with smooth behavior
+                    // This uses the browser's native scroll machinery which may wake up momentum scrolling
+                    const header = quizContent.querySelector('.quiz-header');
+                    if (header && quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
+                        // Use native smooth scroll to initialize momentum scrolling compositor
+                        header.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        
+                        // CRITICAL FIX #4b: Also try instant scrollIntoView to force immediate compositor work
+                        setTimeout(() => {
+                            // Try instant scroll to force compositor
+                            header.scrollIntoView({ behavior: 'instant', block: 'start' });
+                            void quizScrollWrapper.offsetHeight;
+                            
+                            // Then reset to top
+                            quizScrollWrapper.scrollTop = 0;
+                            void quizScrollWrapper.offsetHeight;
+                            
+                            // CRITICAL FIX #4c: Multiple scroll attempts with different methods
+                            // Try to "wake up" momentum scrolling by doing multiple scroll operations
+                            requestAnimationFrame(() => {
+                                quizScrollWrapper.scrollTop = 5;
+                                void quizScrollWrapper.offsetHeight;
+                                requestAnimationFrame(() => {
+                                    quizScrollWrapper.scrollTop = 2;
+                                    void quizScrollWrapper.offsetHeight;
+                                    requestAnimationFrame(() => {
+                                        quizScrollWrapper.scrollTop = 0;
+                                        void quizScrollWrapper.offsetHeight;
+                                        
+                                        // Remove will-change
+                                        quizScrollWrapper.style.willChange = 'auto';
+                                        
+                                        // Remove compositor wake animation
+                                        quizScrollWrapper.classList.remove('compositor-wake');
+                                        
+                                        // Remove temporary compositor hot element
+                                        if (tempCompositorHot && tempCompositorHot.parentNode) {
+                                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                                        }
+                                    });
+                                });
+                            });
+                        }, 200); // Increased delay to allow smooth scroll to complete
+                    } else {
+                        // Fallback: manual scroll manipulation
+                        if (quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
+                            quizScrollWrapper.scrollTop = 3;
                             void quizScrollWrapper.offsetHeight;
                             requestAnimationFrame(() => {
-                                quizScrollWrapper.scrollTop = 0;
+                                quizScrollWrapper.scrollTop = 1;
                                 void quizScrollWrapper.offsetHeight;
-                                
-                                // Now remove the temporary compositor hot element
-                                // Compositor should be fully initialized by now
-                                if (tempCompositorHot && tempCompositorHot.parentNode) {
-                                    tempCompositorHot.parentNode.removeChild(tempCompositorHot);
-                                }
+                                    requestAnimationFrame(() => {
+                                        quizScrollWrapper.scrollTop = 0;
+                                        void quizScrollWrapper.offsetHeight;
+                                        
+                                        // Remove will-change
+                                        quizScrollWrapper.style.willChange = 'auto';
+                                        
+                                        // Remove compositor wake animation
+                                        quizScrollWrapper.classList.remove('compositor-wake');
+                                        
+                                        // Remove temporary compositor hot element
+                                        if (tempCompositorHot && tempCompositorHot.parentNode) {
+                                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                                        }
+                                    });
                             });
-                        });
-                    } else {
-                        // Remove temp element even if no scrollable content
-                        if (tempCompositorHot && tempCompositorHot.parentNode) {
-                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                        } else {
+                            // Remove temp elements even if no scrollable content
+                            quizScrollWrapper.classList.remove('compositor-wake');
+                            if (tempCompositorHot && tempCompositorHot.parentNode) {
+                                tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                            }
                         }
                     }
                 });
