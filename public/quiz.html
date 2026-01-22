@@ -8,15 +8,29 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body class="quiz-page">
-    <!-- Quiz View Container -->
-    <div id="quiz-view" class="quiz-view">
-        <div class="quiz-scroll-wrapper" id="quiz-scroll-wrapper">
-            <div class="quiz-container">
-                <div id="quiz-content"></div>
-                <button id="back-to-ar-button" class="back-to-ar-button">Back to AR</button>
+    <!-- Header -->
+    <header class="quiz-header-bar">
+        <button id="back-to-ar-button" class="back-button" aria-label="Back to AR">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            <span>Back</span>
+        </button>
+        <div class="quiz-title-wrapper">
+            <h1 id="quiz-title" class="quiz-title">Quiz</h1>
+            <div id="quiz-progress" class="quiz-progress-indicator">
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="progress-fill"></div>
+                </div>
+                <span class="progress-text" id="progress-text">Question 1 of 5</span>
             </div>
         </div>
-    </div>
+    </header>
+
+    <!-- Main Content - Simple, scrollable body -->
+    <main class="quiz-main" id="quiz-content">
+        <!-- Content will be dynamically inserted here -->
+    </main>
 
     <!-- Toast Notification Container -->
     <div id="toast-container" class="toast-container"></div>
@@ -42,7 +56,6 @@
                 if (window.Toast) {
                     window.Toast.error('No quiz model specified. Redirecting to AR...', 'Quiz Error', 3000);
                 }
-                // Redirect to index after a delay
                 setTimeout(() => {
                     window.location.href = 'index.html';
                 }, 3000);

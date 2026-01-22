@@ -19,69 +19,25 @@
     let currentQuiz = null;
     let currentQuestionIndex = 0;
     let userAnswers = [];
-    let quizView = null;
     let quizContent = null;
     let backToARButton = null;
-    let quizScrollWrapper = null;
+    let quizTitle = null;
+    let progressFill = null;
+    let progressText = null;
 
     // ============================================================================
-    // iOS SCROLL FIX
+    // CONTEXT DETECTION
     // ============================================================================
     
     /**
-     * Forces iOS Safari to properly initialize scroll compositor.
-     * This fixes the freeze-on-first-scroll bug on iOS Safari, specifically
-     * the freeze that happens when lifting finger (momentum scroll issue).
-     * More aggressive version that simulates what app switching or video overlay does.
-     * @param {HTMLElement} element - The scrollable element to fix
+     * Detects if quiz is running in standalone page mode (quiz.html) or overlay mode (index.html)
+     * @returns {boolean} True if standalone page, false if overlay
      */
-    function forceIOSRepaint(element) {
-        if (!element) return;
-        
-        // Force multiple synchronous layout/reflows to wake up compositor
-        void element.offsetHeight;
-        void element.scrollHeight;
-        void element.clientHeight;
-        
-        const maxScroll = element.scrollHeight - element.clientHeight;
-        
-        if (maxScroll > 0) {
-            // CRITICAL: Do a visible scroll that will trigger momentum scroll compositor
-            // Scroll enough to ensure momentum scrolling is initialized
-            element.scrollTop = Math.min(10, maxScroll);
-            
-            // Force immediate reflow to commit the scroll
-            void element.offsetHeight;
-            void element.scrollTop; // Force read to ensure layout
-            
-            // Wait for paint, then reset
-            requestAnimationFrame(() => {
-                // Reset scroll position
-                element.scrollTop = 0;
-                void element.offsetHeight;
-                
-                // CRITICAL: Do one more small scroll to ensure momentum compositor is ready
-                // This simulates what happens when user lifts finger - momentum needs to be ready
-                requestAnimationFrame(() => {
-                    if (maxScroll > 0) {
-                        element.scrollTop = 2;
-                        void element.offsetHeight;
-                        requestAnimationFrame(() => {
-                            element.scrollTop = 0;
-                            void element.offsetHeight;
-                        });
-                    }
-                });
-            });
-        } else {
-            // Even if no scrollable content, still trigger compositor
-            element.scrollTop = 0.5;
-            void element.offsetHeight;
-            requestAnimationFrame(() => {
-                element.scrollTop = 0;
-                void element.offsetHeight;
-            });
-        }
+    function isStandalonePage() {
+        // Check if we're on quiz.html by looking for AR container
+        // If AR container doesn't exist, we're on standalone quiz page
+        const arContainer = document.getElementById('ar-container');
+        return !arContainer;
     }
 
     // ============================================================================
@@ -129,32 +85,18 @@
     }
 
     // ============================================================================
-    // CONTEXT DETECTION
-    // ============================================================================
-    
-    /**
-     * Detects if quiz is running in standalone page mode (quiz.html) or overlay mode (index.html)
-     * @returns {boolean} True if standalone page, false if overlay
-     */
-    function isStandalonePage() {
-        // Check if we're on quiz.html by looking for AR container
-        // If AR container doesn't exist, we're on standalone quiz page
-        const arContainer = document.getElementById('ar-container');
-        return !arContainer;
-    }
-
-    // ============================================================================
     // DOM ELEMENTS
     // ============================================================================
     
     function getDOMElements() {
-        quizView = document.getElementById('quiz-view');
         quizContent = document.getElementById('quiz-content');
         backToARButton = document.getElementById('back-to-ar-button');
-        quizScrollWrapper = document.getElementById('quiz-scroll-wrapper');
+        quizTitle = document.getElementById('quiz-title');
+        progressFill = document.getElementById('progress-fill');
+        progressText = document.getElementById('progress-text');
         
-        if (!quizView || !quizContent || !quizScrollWrapper) {
-            console.error('Quiz DOM elements not found');
+        if (!quizContent) {
+            console.error('Quiz content element not found');
             return false;
         }
         return true;
@@ -202,155 +144,35 @@
         currentQuestionIndex = 0;
         userAnswers = [];
 
-        const isStandalone = isStandalonePage();
-
-        // Only hide AR elements if in overlay mode (not standalone)
-        if (!isStandalone) {
-            // Hide AR container completely
-            const arContainer = document.getElementById('ar-container');
-            if (arContainer) {
-                arContainer.style.display = 'none';
-                const canvas = arContainer.querySelector('canvas');
-                if (canvas) {
-                    canvas.style.display = 'none';
-                    canvas.style.visibility = 'hidden';
-                }
-            }
-
-            // Hide reset button when in quiz mode
-            const resetButton = document.getElementById('reset-button');
-            if (resetButton) {
-                resetButton.classList.add('hidden');
-            }
-
-            // CRITICAL: Hide XR overlay to prevent compositor interference
-            // Even though it has pointer-events: none, removing it from render tree
-            // ensures clean compositor layer creation for the quiz
-            const xrOverlay = document.getElementById('xr-overlay');
-            if (xrOverlay) {
-                xrOverlay.style.display = 'none';
-            }
-        }
-
-        // Render first question
-        renderQuestion();
-
-        // Show quiz view (using display, not visibility, for cleaner state)
-        // In standalone mode, quiz view is already visible, just ensure it's not hidden
-        quizView.classList.remove('hidden');
-        
-        // CRITICAL: Force immediate layout calculation after showing
-        // This ensures iOS knows the element is visible
-        void quizView.offsetHeight;
-        
-        // Reset scroll position
-        quizScrollWrapper.scrollTop = 0;
-        
-        // Force multiple layout calculations to ensure everything is measured
-        void quizView.offsetHeight;
-        void quizScrollWrapper.offsetHeight;
-        void quizScrollWrapper.scrollHeight;
-        void quizScrollWrapper.clientHeight;
-        void quizContent.offsetHeight;
-        
-        // In standalone mode, we don't need the complex compositor initialization
-        // because we're on a fresh page. Just ensure basic scroll readiness.
-        if (isStandalone) {
-            // Simple scroll initialization for standalone page
-            // Fresh page context means compositor should initialize naturally
-            requestAnimationFrame(() => {
-                void quizScrollWrapper.offsetHeight;
-                void quizScrollWrapper.scrollHeight;
-            });
-        } else {
-            // Overlay mode: Use complex compositor initialization
-            // CRITICAL iOS FIX: Add passive touch listeners to ensure scroll works
-            // This prevents any event interference
-            const ensureScrollWorks = () => {
-                if (quizScrollWrapper) {
-                    // Add passive touch listeners to "prime" the scroll
-                    const touchHandler = (e) => {
-                        // Don't prevent default - let iOS handle scroll naturally
-                    };
-                    quizScrollWrapper.addEventListener('touchstart', touchHandler, { passive: true });
-                    quizScrollWrapper.addEventListener('touchmove', touchHandler, { passive: true });
-                    quizScrollWrapper.addEventListener('touchend', touchHandler, { passive: true });
-                }
-            };
-            
-            // Add touch listeners
-            ensureScrollWorks();
-            
-            // CRITICAL: Create a temporary compositor "hot" element
-            // This simulates what Instagram video overlay does - keeps compositor active
-            // We'll remove it after compositor is initialized
-            const tempCompositorHot = document.createElement('div');
-            tempCompositorHot.style.position = 'fixed';
-            tempCompositorHot.style.top = '0';
-            tempCompositorHot.style.left = '0';
-            tempCompositorHot.style.width = '1px';
-            tempCompositorHot.style.height = '1px';
-            tempCompositorHot.style.zIndex = '999998';
-            tempCompositorHot.style.pointerEvents = 'none';
-            tempCompositorHot.style.opacity = '0.01';
-            tempCompositorHot.style.transform = 'translateZ(0)';
-            document.body.appendChild(tempCompositorHot);
-            
-            // CRITICAL FIX: Wake up the iOS Safari scroll compositor
-            // This is THE KEY FIX - forces compositor initialization just like
-            // app switching or having an Instagram video call overlay does
-            // The freeze happens on finger lift (momentum scroll), so we need to
-            // ensure momentum scrolling compositor is fully initialized
-            requestAnimationFrame(() => {
-                // First frame: view should be painted now, force layout
-                void quizScrollWrapper.offsetHeight;
-                void quizScrollWrapper.scrollHeight;
-                void quizScrollWrapper.clientHeight;
-                
-                requestAnimationFrame(() => {
-                    // Second frame: now wake up the scroll compositor (including momentum)
-                    forceIOSRepaint(quizScrollWrapper);
-                    
-                    // Third frame: ensure momentum compositor is fully ready
-                    requestAnimationFrame(() => {
-                        // Force final layout and verify scroll is ready
-                        void quizScrollWrapper.offsetHeight;
-                        void quizScrollWrapper.scrollHeight;
-                        
-                        // CRITICAL: One more momentum scroll simulation to ensure
-                        // the compositor is ready for when user lifts finger
-                        if (quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
-                            // Simulate a momentum scroll by doing a quick scroll sequence
-                            quizScrollWrapper.scrollTop = 3;
-                            void quizScrollWrapper.offsetHeight;
-                            requestAnimationFrame(() => {
-                                quizScrollWrapper.scrollTop = 1;
-                                void quizScrollWrapper.offsetHeight;
-                                requestAnimationFrame(() => {
-                                    quizScrollWrapper.scrollTop = 0;
-                                    void quizScrollWrapper.offsetHeight;
-                                    
-                                    // Now remove the temporary compositor hot element
-                                    // Compositor should be fully initialized by now
-                                    if (tempCompositorHot && tempCompositorHot.parentNode) {
-                                        tempCompositorHot.parentNode.removeChild(tempCompositorHot);
-                                    }
-                                });
-                            });
-                        } else {
-                            // Remove temp element even if no scrollable content
-                            if (tempCompositorHot && tempCompositorHot.parentNode) {
-                                tempCompositorHot.parentNode.removeChild(tempCompositorHot);
-                            }
-                        }
-                    });
-                });
-            });
+        // Update header
+        if (quizTitle) {
+            quizTitle.textContent = currentQuiz.title;
         }
 
         // Set up back button handler
         if (backToARButton) {
             backToARButton.onclick = backToAR;
+        }
+
+        // Render first question
+        renderQuestion();
+    }
+
+    /**
+     * Updates the progress indicator in the header
+     */
+    function updateProgress() {
+        if (!currentQuiz) return;
+        
+        const totalQuestions = currentQuiz.questions.length;
+        const progress = ((currentQuestionIndex + 1) / totalQuestions) * 100;
+        
+        if (progressFill) {
+            progressFill.style.width = `${progress}%`;
+        }
+        
+        if (progressText) {
+            progressText.textContent = `Question ${currentQuestionIndex + 1} of ${totalQuestions}`;
         }
     }
 
@@ -363,65 +185,87 @@
         }
 
         const question = currentQuiz.questions[currentQuestionIndex];
-        const totalQuestions = currentQuiz.questions.length;
-        const progress = ((currentQuestionIndex + 1) / totalQuestions) * 100;
+        const userAnswer = userAnswers[currentQuestionIndex];
+
+        // Update progress
+        updateProgress();
 
         // Build HTML
         let html = `
-            <div class="quiz-header">
-                <h2>${currentQuiz.title}</h2>
-                <div class="quiz-progress">
-                    <div class="progress-bar">
-                        <div class="progress-fill" style="width: ${progress}%"></div>
-                    </div>
-                    <span class="progress-text">Question ${currentQuestionIndex + 1} of ${totalQuestions}</span>
-                </div>
-            </div>
-            <div class="question-container">
-                <div class="question-text">${question.question}</div>
-                <div class="options-container">
+            <div class="question-card">
+                <div class="question-number">Question ${currentQuestionIndex + 1}</div>
+                <h2 class="question-title">${question.question}</h2>
+                <div class="options-grid">
         `;
 
         // Add answer options
-        const userAnswer = userAnswers[currentQuestionIndex];
         question.options.forEach((option, index) => {
-            let buttonClass = 'option-button';
+            let buttonClass = 'option-card';
+            let icon = '';
             
             // If user has already answered this question correctly, show it as correct
-            if (userAnswer !== undefined && index === question.correct) {
-                buttonClass += ' correct';
+            if (userAnswer !== undefined) {
+                if (index === question.correct) {
+                    buttonClass += ' correct';
+                    icon = '<svg class="option-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+                } else if (index === userAnswer && index !== question.correct) {
+                    buttonClass += ' incorrect';
+                    icon = '<svg class="option-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+                }
             }
             
             html += `
-                <button class="${buttonClass}" data-index="${index}">
-                    ${option}
+                <button class="${buttonClass}" data-index="${index}" ${userAnswer !== undefined ? 'disabled' : ''}>
+                    <span class="option-content">${option}</span>
+                    ${icon}
                 </button>
             `;
         });
 
         html += `
                 </div>
-            </div>
-            <div class="quiz-navigation">
+                <div class="question-navigation">
         `;
 
-        // Previous button (disabled on first question)
+        // Previous button
         if (currentQuestionIndex > 0) {
-            html += `<button class="nav-button prev-button">Previous</button>`;
+            html += `<button class="nav-btn secondary prev-button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Previous
+            </button>`;
         } else {
-            html += `<button class="nav-button prev-button" disabled>Previous</button>`;
+            html += `<button class="nav-btn secondary prev-button" disabled>Previous</button>`;
         }
 
         // Next/Submit button
-        if (currentQuestionIndex < totalQuestions - 1) {
-            html += `<button class="nav-button primary next-button">Next</button>`;
+        if (currentQuestionIndex < currentQuiz.questions.length - 1) {
+            html += `<button class="nav-btn primary next-button" ${userAnswer === undefined ? 'disabled' : ''}>
+                Next
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </button>`;
         } else {
-            html += `<button class="nav-button primary submit-button">Submit Quiz</button>`;
+            html += `<button class="nav-btn primary submit-button" ${userAnswer === undefined ? 'disabled' : ''}>
+                Submit Quiz
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                    <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+            </button>`;
         }
 
-        html += `</div>`;
+        html += `
+                </div>
+            </div>
+        `;
 
         quizContent.innerHTML = html;
+
+        // Scroll to top smoothly
+        window.scrollTo({ top: 0, behavior: 'smooth' });
 
         // Attach event listeners
         attachQuestionListeners();
@@ -435,46 +279,35 @@
         const correctAnswerIndex = question.correct;
         
         // Answer option buttons
-        const answerOptions = quizContent.querySelectorAll('.option-button');
+        const answerOptions = quizContent.querySelectorAll('.option-card');
         const nextButton = quizContent.querySelector('.next-button');
         const submitButton = quizContent.querySelector('.submit-button');
+        const prevButton = quizContent.querySelector('.prev-button');
         
-        // If user has already answered this question correctly, enable next/submit button
-        if (userAnswers[currentQuestionIndex] !== undefined) {
-            if (nextButton) nextButton.disabled = false;
-            if (submitButton) submitButton.disabled = false;
-            
-            // Disable all buttons since the question is already answered
-            answerOptions.forEach(opt => {
-                opt.disabled = true;
-                opt.style.pointerEvents = 'none';
-            });
-            return; // Don't attach click listeners if already answered
-        } else {
-            // Disable next/submit buttons initially if no correct answer selected yet
-            if (nextButton) nextButton.disabled = true;
-            if (submitButton) submitButton.disabled = true;
+        const userAnswer = userAnswers[currentQuestionIndex];
+        
+        // If already answered, don't attach click listeners
+        if (userAnswer !== undefined) {
+            return;
         }
         
         answerOptions.forEach(button => {
             const answerIndex = parseInt(button.getAttribute('data-index'));
             
-            // If this answer was previously marked as incorrect, disable it
-            if (button.classList.contains('incorrect')) {
-                button.disabled = true;
-                button.style.pointerEvents = 'none';
-                return;
-            }
-            
             button.addEventListener('click', (e) => {
-                const clickedButton = e.target;
+                const clickedButton = e.target.closest('.option-card');
                 const selectedIndex = parseInt(clickedButton.getAttribute('data-index'));
                 
                 // Check if this is the correct answer
                 if (selectedIndex === correctAnswerIndex) {
                     // Correct answer!
                     clickedButton.classList.add('correct');
-                    clickedButton.classList.remove('selected');
+                    clickedButton.innerHTML = `
+                        <span class="option-content">${question.options[selectedIndex]}</span>
+                        <svg class="option-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M20 6L9 17l-5-5"/>
+                        </svg>
+                    `;
                     
                     // Store the correct answer
                     userAnswers[currentQuestionIndex] = selectedIndex;
@@ -487,33 +320,36 @@
                         submitButton.disabled = false;
                     }
                     
-                    // Disable all other buttons to prevent further clicks
+                    // Disable all other buttons
                     answerOptions.forEach(opt => {
+                        opt.disabled = true;
                         if (opt !== clickedButton) {
-                            opt.disabled = true;
-                            opt.style.pointerEvents = 'none';
+                            opt.classList.add('disabled');
                         }
                     });
                     
                     if (window.Toast) {
-                        window.Toast.success('Correct! You can now proceed.', 'Well Done', 2000);
+                        window.Toast.success('Correct! Well done!', 'Success', 2000);
                     }
                 } else {
                     // Wrong answer
                     clickedButton.classList.add('incorrect');
-                    clickedButton.classList.remove('selected');
+                    clickedButton.innerHTML = `
+                        <span class="option-content">${question.options[selectedIndex]}</span>
+                        <svg class="option-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    `;
                     clickedButton.disabled = true;
-                    clickedButton.style.pointerEvents = 'none';
                     
                     if (window.Toast) {
-                        window.Toast.error('That\'s not correct. Please try again.', 'Incorrect Answer', 2000);
+                        window.Toast.error('That\'s not correct. Try again!', 'Incorrect', 2000);
                     }
                 }
             });
         });
 
         // Navigation buttons
-        const prevButton = quizContent.querySelector('.prev-button');
         if (prevButton && !prevButton.disabled) {
             prevButton.addEventListener('click', () => {
                 if (currentQuestionIndex > 0) {
@@ -532,7 +368,7 @@
                     }
                 } else {
                     if (window.Toast) {
-                        window.Toast.warning('Please select the correct answer before continuing.', 'Select Answer', 3000);
+                        window.Toast.warning('Please select the correct answer first.', 'Select Answer', 2000);
                     }
                 }
             });
@@ -544,7 +380,7 @@
                     showResults();
                 } else {
                     if (window.Toast) {
-                        window.Toast.warning('Please select the correct answer before submitting.', 'Select Answer', 3000);
+                        window.Toast.warning('Please select the correct answer first.', 'Select Answer', 2000);
                     }
                 }
             });
@@ -559,14 +395,24 @@
             return;
         }
 
+        // Update progress to 100%
+        if (progressFill) {
+            progressFill.style.width = '100%';
+        }
+        if (progressText) {
+            progressText.textContent = 'Completed!';
+        }
+
         // Build recap HTML
         let html = `
-            <div class="quiz-header">
-                <h2>${currentQuiz.title} - Recap</h2>
-            </div>
-            <div class="quiz-recap">
-                <div class="recap-intro">
-                    <p>Here's a summary of what you learned:</p>
+            <div class="results-card">
+                <div class="results-header">
+                    <svg class="results-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <h2 class="results-title">Quiz Complete!</h2>
+                    <p class="results-subtitle">Here's what you learned:</p>
                 </div>
                 <div class="recap-list">
         `;
@@ -577,11 +423,14 @@
             const userAnswerText = question.options[userAnswer];
 
             html += `
-                <div class="recap-item">
-                    <div class="recap-number">Question ${index + 1}</div>
-                    <div class="recap-content">
-                        <div class="recap-question">${question.question}</div>
-                        <div class="recap-answer">${userAnswerText}</div>
+                <div class="recap-card">
+                    <div class="recap-header">
+                        <span class="recap-number">Q${index + 1}</span>
+                        <span class="recap-status correct">✓ Correct</span>
+                    </div>
+                    <div class="recap-question">${question.question}</div>
+                    <div class="recap-answer">
+                        <strong>Your answer:</strong> ${userAnswerText}
                     </div>
                 </div>
             `;
@@ -589,20 +438,23 @@
 
         html += `
                 </div>
-                <div class="quiz-navigation">
-                    <button class="nav-button primary restart-button">Restart Quiz</button>
+                <div class="results-actions">
+                    <button class="nav-btn primary restart-button">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="23 4 23 10 17 10"/>
+                            <polyline points="1 20 1 14 7 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        Restart Quiz
+                    </button>
                 </div>
             </div>
         `;
 
         quizContent.innerHTML = html;
 
-        // Reset scroll position after content is rendered
-        if (quizScrollWrapper) {
-            quizScrollWrapper.scrollTop = 0;
-            // Force layout calculation
-            void quizScrollWrapper.offsetHeight;
-        }
+        // Scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
 
         // Attach restart button listener
         const restartButton = quizContent.querySelector('.restart-button');
@@ -633,26 +485,10 @@
             }, 300); // Match CSS animation duration
         } else {
             // Overlay mode: Hide quiz and restore AR view
-            // Hide quiz view
+            // This shouldn't happen with new structure, but keep for compatibility
+            const quizView = document.getElementById('quiz-view');
             if (quizView) {
                 quizView.classList.add('hidden');
-            }
-            
-            // Reset scroll wrapper
-            if (quizScrollWrapper) {
-                quizScrollWrapper.scrollTop = 0;
-            }
-
-            // Restore XR overlay (was hidden when quiz was shown)
-            const xrOverlay = document.getElementById('xr-overlay');
-            if (xrOverlay) {
-                xrOverlay.style.display = '';
-            }
-
-            // Show AR container
-            const arContainer = document.getElementById('ar-container');
-            if (arContainer) {
-                arContainer.style.display = 'block';
             }
 
             // Reset quiz state
