@@ -557,7 +557,7 @@
             } catch (error) {
                 console.error('Error restarting AR:', error);
                 if (window.Toast) {
-                    window.Toast.error('Failed to restart AR. Please click "Start AR" manually.', 'AR Restart Failed', 5000);
+                    window.Toast.error('Failed to restart AR. Please click "Start AR" manually.', 'AR Restart Failed', 5000, true);
                 }
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';

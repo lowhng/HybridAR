@@ -9,6 +9,18 @@ let toastContainer = null;
 let toastCount = 0;
 const MAX_TOASTS = 5; // Maximum number of toasts to show at once
 
+/**
+ * Check if debug mode is enabled
+ * @returns {boolean} True if debug mode is enabled
+ */
+function isDebugMode() {
+    // Check if WebXRAR is available and debug mode is enabled
+    if (typeof window !== 'undefined' && window.WebXRAR && typeof window.WebXRAR.debugMode === 'function') {
+        return window.WebXRAR.debugMode();
+    }
+    return false;
+}
+
 function getToastContainer() {
     if (!toastContainer) {
         toastContainer = document.getElementById('toast-container');
@@ -29,8 +41,14 @@ function getToastContainer() {
  * @param {string} type - 'error', 'warning', 'info', 'success' (default: 'info')
  * @param {number} duration - Duration in milliseconds (0 = don't auto-remove, default: 5000)
  * @param {string} title - Optional title for the toast
+ * @param {boolean} isDebug - If true, only show when debug mode is enabled (default: false)
  */
-function showToast(message, type = 'info', duration = 5000, title = null) {
+function showToast(message, type = 'info', duration = 5000, title = null, isDebug = false) {
+    // Skip debug toasts if debug mode is not enabled
+    if (isDebug && !isDebugMode()) {
+        return null;
+    }
+    
     const container = getToastContainer();
     
     // Limit number of toasts
@@ -88,30 +106,34 @@ function escapeHtml(text) {
 
 /**
  * Show error toast
+ * @param {boolean} isDebug - If true, only show when debug mode is enabled (default: false)
  */
-function showError(message, title = 'Error', duration = 8000) {
-    return showToast(message, 'error', duration, title);
+function showError(message, title = 'Error', duration = 8000, isDebug = false) {
+    return showToast(message, 'error', duration, title, isDebug);
 }
 
 /**
  * Show warning toast
+ * @param {boolean} isDebug - If true, only show when debug mode is enabled (default: false)
  */
-function showWarning(message, title = 'Warning', duration = 6000) {
-    return showToast(message, 'warning', duration, title);
+function showWarning(message, title = 'Warning', duration = 6000, isDebug = false) {
+    return showToast(message, 'warning', duration, title, isDebug);
 }
 
 /**
  * Show info toast
+ * @param {boolean} isDebug - If true, only show when debug mode is enabled (default: false)
  */
-function showInfo(message, title = 'Info', duration = 4000) {
-    return showToast(message, 'info', duration, title);
+function showInfo(message, title = 'Info', duration = 4000, isDebug = false) {
+    return showToast(message, 'info', duration, title, isDebug);
 }
 
 /**
  * Show success toast
+ * @param {boolean} isDebug - If true, only show when debug mode is enabled (default: false)
  */
-function showSuccess(message, title = 'Success', duration = 3000) {
-    return showToast(message, 'success', duration, title);
+function showSuccess(message, title = 'Success', duration = 3000, isDebug = false) {
+    return showToast(message, 'success', duration, title, isDebug);
 }
 
 // ============================================================================
@@ -126,31 +148,37 @@ const originalConsole = {
     info: console.info.bind(console)
 };
 
-// Intercept console.error and show toast
+// Intercept console.error and show toast (only in debug mode)
 console.error = function(...args) {
     originalConsole.error(...args);
-    const message = args.map(arg => {
-        if (typeof arg === 'object') {
-            try {
-                return JSON.stringify(arg, null, 2);
-            } catch (e) {
-                return String(arg);
+    // Only show console errors as toasts in debug mode
+    if (isDebugMode()) {
+        const message = args.map(arg => {
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg, null, 2);
+                } catch (e) {
+                    return String(arg);
+                }
             }
-        }
-        return String(arg);
-    }).join(' ');
-    
-    // Truncate very long messages
-    const displayMessage = message.length > 300 ? message.substring(0, 300) + '...' : message;
-    showError(displayMessage, 'Console Error', 10000);
+            return String(arg);
+        }).join(' ');
+        
+        // Truncate very long messages
+        const displayMessage = message.length > 300 ? message.substring(0, 300) + '...' : message;
+        showError(displayMessage, 'Console Error', 10000, true);
+    }
 };
 
-// Intercept console.warn and show toast
+// Intercept console.warn and show toast (only in debug mode)
 console.warn = function(...args) {
     originalConsole.warn(...args);
-    const message = args.map(arg => String(arg)).join(' ');
-    const displayMessage = message.length > 300 ? message.substring(0, 300) + '...' : message;
-    showWarning(displayMessage, 'Console Warning', 6000);
+    // Only show console warnings as toasts in debug mode
+    if (isDebugMode()) {
+        const message = args.map(arg => String(arg)).join(' ');
+        const displayMessage = message.length > 300 ? message.substring(0, 300) + '...' : message;
+        showWarning(displayMessage, 'Console Warning', 6000, true);
+    }
 };
 
 // Optionally intercept console.log for important messages
@@ -171,19 +199,23 @@ console.log = function(...args) {
 // ERROR HANDLING
 // ============================================================================
 
-// Global error handler
+// Global error handler (only show in debug mode)
 window.addEventListener('error', (event) => {
     const errorMessage = `${event.message}\n${event.filename}:${event.lineno}:${event.colno}`;
-    showError(errorMessage, 'JavaScript Error', 10000);
+    if (isDebugMode()) {
+        showError(errorMessage, 'JavaScript Error', 10000, true);
+    }
     originalConsole.error('Global error:', event);
 });
 
-// Unhandled promise rejection handler
+// Unhandled promise rejection handler (only show in debug mode)
 window.addEventListener('unhandledrejection', (event) => {
     const errorMessage = event.reason ? 
         (event.reason.message || String(event.reason)) : 
         'Unhandled Promise Rejection';
-    showError(errorMessage, 'Promise Rejection', 10000);
+    if (isDebugMode()) {
+        showError(errorMessage, 'Promise Rejection', 10000, true);
+    }
     originalConsole.error('Unhandled rejection:', event.reason);
 });
 

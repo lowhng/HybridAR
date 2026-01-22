@@ -364,7 +364,7 @@ async function initWebXR() {
 
     debugLog('WebXR supported, initializing...');
     if (window.Toast) {
-        window.Toast.info('WebXR is supported, starting initialization...', 'Initializing', 3000);
+        window.Toast.info('WebXR is supported, starting initialization...', 'Initializing', 3000, true);
     }
 
     // Create Three.js scene
@@ -588,7 +588,7 @@ async function initWebXR() {
                     xrSession = await navigator.xr.requestSession('immersive-ar', fallbackOptions);
                     console.warn('Session started without DOM overlay - HTML UI may not be visible in AR');
                     if (window.Toast) {
-                        window.Toast.warning('DOM overlay not available. UI buttons may not appear in AR view.', 'Limited UI', 5000);
+                        window.Toast.warning('DOM overlay not available. UI buttons may not appear in AR view.', 'Limited UI', 5000, true);
                     }
                 } catch (fallbackError) {
                     // Fallback also failed, throw original error
@@ -629,7 +629,7 @@ async function initWebXR() {
         isSpawning = false; // Reset spawning flag
         
         if (window.Toast) {
-            window.Toast.success('WebXR session started!', 'Session Active', 3000);
+            window.Toast.success('WebXR session started!', 'Session Active', 3000, true);
         }
         
         // Prevent overlay taps from triggering XR select events
@@ -780,7 +780,7 @@ async function initWebXR() {
         console.log('Render loop started - camera feed should be visible');
         
         if (window.Toast) {
-            window.Toast.info('Render loop started. Camera feed should appear shortly...', 'Rendering', 4000);
+            window.Toast.info('Render loop started. Camera feed should appear shortly...', 'Rendering', 4000, true);
         }
         
         // Force an immediate frame render to kickstart the loop (iOS sometimes needs this)
@@ -790,12 +790,12 @@ async function initWebXR() {
             if (renderer.xr.isPresenting) {
                 console.log('XR is presenting - camera feed should be visible');
                 if (window.Toast) {
-                    window.Toast.success('XR is presenting! Camera feed should be visible.', 'AR Active', 3000);
+                    window.Toast.success('XR is presenting! Camera feed should be visible.', 'AR Active', 3000, true);
                 }
             } else {
                 console.warn('XR is not presenting yet - this might be normal during initialization');
                 if (window.Toast) {
-                    window.Toast.warning('XR not presenting yet. This may be normal during initialization.', 'Initializing', 4000);
+                    window.Toast.warning('XR not presenting yet. This may be normal during initialization.', 'Initializing', 4000, true);
                 }
             }
         });
@@ -812,12 +812,13 @@ async function initWebXR() {
 
     } catch (error) {
         console.error('Failed to start WebXR session:', error);
-        // Show error in toast if available
+        // Show error in toast if available (debug mode only)
         if (window.Toast) {
             window.Toast.error(
                 `WebXR Session Error: ${error.message}\n\n${error.stack ? error.stack.substring(0, 300) : ''}`,
                 'WebXR Initialization Failed',
-                10000
+                10000,
+                true
             );
         }
         throw error;
@@ -877,7 +878,7 @@ async function createContentForSurface(surfaceType) {
         console.log('Loading wire.glb for wall surface...');
         
         if (window.Toast) {
-            window.Toast.info('Loading wire model...', 'Loading', 2000);
+            window.Toast.info('Loading wire model...', 'Loading', 2000, true);
         }
         
         try {
@@ -945,14 +946,14 @@ async function createContentForSurface(surfaceType) {
             console.log('=== WIRE.GLB ADDED TO SCENE ===');
             
             if (window.Toast) {
-                window.Toast.success('Wire model placed!', 'Success', 3000);
+                window.Toast.success('Wire model placed!', 'Success', 3000, true);
             }
         } catch (error) {
             console.error('=== FAILED TO LOAD WIRE.GLB ===');
             console.error('Error:', error?.message || String(error));
             
             if (window.Toast) {
-                window.Toast.error(`Failed to load wire model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000);
+                window.Toast.error(`Failed to load wire model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000, true);
             }
             
             console.log('Falling back to orange box for wall');
@@ -963,7 +964,7 @@ async function createContentForSurface(surfaceType) {
         console.log('Loading puddle.glb for floor surface...');
         
         if (window.Toast) {
-            window.Toast.info('Loading puddle model...', 'Loading', 2000);
+            window.Toast.info('Loading puddle model...', 'Loading', 2000, true);
         }
         
         try {
@@ -1094,14 +1095,14 @@ async function createContentForSurface(surfaceType) {
             console.log('Final puddle model bounding box center:', finalCenter);
             
             if (window.Toast) {
-                window.Toast.success('Puddle model placed!', 'Success', 3000);
+                window.Toast.success('Puddle model placed!', 'Success', 3000, true);
             }
         } catch (error) {
             console.error('=== FAILED TO LOAD PUDDLE.GLB ===');
             console.error('Error:', error?.message || String(error));
             
             if (window.Toast) {
-                window.Toast.error(`Failed to load puddle model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000);
+                window.Toast.error(`Failed to load puddle model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000, true);
             }
             
             console.log('Falling back to green box for floor');
@@ -1133,7 +1134,7 @@ function createWallPlaceholder() {
     console.log('Content group children count:', contentGroup.children.length);
     
     if (window.Toast) {
-        window.Toast.warning('Using placeholder instead of wire.glb', 'Model Not Loaded', 4000);
+        window.Toast.warning('Using placeholder instead of wire.glb', 'Model Not Loaded', 4000, true);
     }
 }
 
@@ -1413,7 +1414,7 @@ function onXRFrame(timestamp, frame) {
     if (frameCount === 1) {
         debugLog('WebXR render loop started - first frame rendered');
         if (window.Toast) {
-            window.Toast.success('First frame rendered!', 'Render Loop Active', 2000);
+            window.Toast.success('First frame rendered!', 'Render Loop Active', 2000, true);
         }
     } else if (frameCount <= 5 || frameCount % 300 === 0) {
         debugLog('WebXR render loop active - frame:', frameCount, 'hasFrame:', !!frame);

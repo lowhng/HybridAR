@@ -322,12 +322,13 @@ if (startButton) {
                 stack: error.stack
             });
             
-            // Show user-friendly error in toast
+            // Show user-friendly error in toast (debug mode only)
             if (window.Toast) {
                 window.Toast.error(
                     `${error.message}\n\n${error.stack ? error.stack.substring(0, 200) : ''}`,
                     'Failed to Start AR',
-                    10000
+                    10000,
+                    true
                 );
             } else {
                 alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
