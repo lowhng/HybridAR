@@ -13,11 +13,26 @@
     <!-- AR Canvas Container -->
     <div id="ar-container"></div>
 
+    <!-- Logo -->
+    <div id="logo-container" class="logo-container">
+        <img src="assets/stratcom-logo-edit.png" alt="STRATCOM SECURITY Logo" class="logo-image">
+        <p class="topic-text">Topic: Health & Safety in the Workplace</p>
+    </div>
+
     <!-- Start AR Button -->
     <button id="start-button" class="start-button">Start AR</button>
 
     <!-- Reset Button (only visible for WebXR) -->
     <button id="reset-button" class="reset-button hidden">Reset</button>
+
+    <!-- Close Button (only visible for WebXR) -->
+    <button id="close-button" class="close-button hidden" aria-label="Close AR">×</button>
+
+    <!-- Debug Toggle (top right) -->
+    <div id="debug-toggle" class="debug-toggle">
+        <input type="checkbox" id="debug-checkbox" />
+        <label for="debug-checkbox">Debug</label>
+    </div>
 
     <!-- WebXR Instruction (shown briefly when WebXR starts) -->
     <div id="webxr-instruction" class="webxr-instruction hidden">
@@ -32,9 +47,11 @@
 
     <!-- Quiz View Container (hidden initially) -->
     <div id="quiz-view" class="quiz-view hidden">
-        <div class="quiz-container">
-            <div id="quiz-content"></div>
-            <button id="back-to-ar-button" class="back-to-ar-button">Back to AR</button>
+        <div class="quiz-scroll-wrapper" id="quiz-scroll-wrapper">
+            <div class="quiz-container">
+                <div id="quiz-content"></div>
+                <button id="back-to-ar-button" class="back-to-ar-button">Back to AR</button>
+            </div>
         </div>
     </div>
 

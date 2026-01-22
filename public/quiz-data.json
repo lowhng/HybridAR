@@ -1,0 +1,52 @@
+{
+  "wire-model": {
+    "title": "Exposed Wires on the Wall - Safety Quiz",
+    "questions": [
+      {
+        "question": "You notice exposed electrical wires on a wall near a walkway. What is the safest immediate action?",
+        "options": [
+          "Tape over the wires and carry on working",
+          "Keep people away from the area and report it immediately to your supervisor/health and safety contact",
+          "Touch the wires to check if they are live",
+          "Ignore it because it is the electrician's job"
+        ],
+        "correct": 1
+      },
+      {
+        "question": "Under the Health and Safety at Work Act 2015 (NZ), which control best represents \"eliminating\" the risk from exposed wires?",
+        "options": [
+          "Put up a \"Caution\" sign and tell people to be careful",
+          "Ask staff to avoid that part of the wall",
+          "Arrange urgent isolation/repair so the wiring is enclosed and compliant before the area is used",
+          "Provide rubber gloves to anyone walking past"
+        ],
+        "correct": 2
+      }
+    ]
+  },
+  "green-cube": {
+    "title": "Water Puddle on the Floor - Safety Quiz",
+    "questions": [
+      {
+        "question": "You spot a water puddle in a busy corridor. What should you do first?",
+        "options": [
+          "Step around it and carry on",
+          "Put up a warning sign or barrier to prevent slips, then clean it up (or arrange cleaning) and report it if required",
+          "Wait to see if it dries on its own",
+          "Mop it later when the corridor is quieter, without marking it"
+        ],
+        "correct": 1
+      },
+      {
+        "question": "The puddle keeps reappearing every day near a fridge or ceiling vent. What is the best Health and Safety at Work Act-aligned response?",
+        "options": [
+          "Keep mopping it up and do not report it",
+          "Put down a towel permanently",
+          "Report it as a recurring hazard and escalate so the underlying cause is fixed (e.g., a leak repair), while using temporary controls in the meantime",
+          "Tell others to \"watch their step\""
+        ],
+        "correct": 2
+      }
+    ]
+  }
+}

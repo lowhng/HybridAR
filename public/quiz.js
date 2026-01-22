@@ -8,48 +8,9 @@
     // QUIZ DATA
     // ============================================================================
     
-    const quizData = {
-        'wire-model': {
-            title: 'Wire Model Quiz',
-            questions: [
-                {
-                    question: 'What type of surface is the wire model designed for?',
-                    options: ['Wall', 'Floor', 'Ceiling', 'Any surface'],
-                    correct: 0
-                },
-                {
-                    question: 'What color does the reticle appear when detecting a wall?',
-                    options: ['Cyan', 'Orange', 'Green', 'Blue'],
-                    correct: 1
-                },
-                {
-                    question: 'How long do you need to gaze at the model to see the quiz button?',
-                    options: ['1 second', '2 seconds', '3 seconds', '5 seconds'],
-                    correct: 1
-                }
-            ]
-        },
-        'green-cube': {
-            title: 'Floor Model Quiz',
-            questions: [
-                {
-                    question: 'What type of surface is the puddle model designed for?',
-                    options: ['Wall', 'Floor', 'Ceiling', 'Any surface'],
-                    correct: 1
-                },
-                {
-                    question: 'What color does the reticle appear when detecting a floor?',
-                    options: ['Cyan', 'Orange', 'Green', 'Blue'],
-                    correct: 0
-                },
-                {
-                    question: 'What is the target size for the floor model?',
-                    options: ['30cm', '40cm', '50cm', '60cm'],
-                    correct: 2
-                }
-            ]
-        },
-    };
+    let quizData = null;
+    let quizDataLoaded = false;
+    let quizDataLoading = false;
 
     // ============================================================================
     // STATE
@@ -61,6 +22,111 @@
     let quizView = null;
     let quizContent = null;
     let backToARButton = null;
+    let quizScrollWrapper = null;
+
+    // ============================================================================
+    // iOS SCROLL FIX
+    // ============================================================================
+    
+    /**
+     * Forces iOS Safari to properly initialize scroll compositor.
+     * This fixes the freeze-on-first-scroll bug on iOS Safari, specifically
+     * the freeze that happens when lifting finger (momentum scroll issue).
+     * More aggressive version that simulates what app switching or video overlay does.
+     * @param {HTMLElement} element - The scrollable element to fix
+     */
+    function forceIOSRepaint(element) {
+        if (!element) return;
+        
+        // Force multiple synchronous layout/reflows to wake up compositor
+        void element.offsetHeight;
+        void element.scrollHeight;
+        void element.clientHeight;
+        
+        const maxScroll = element.scrollHeight - element.clientHeight;
+        
+        if (maxScroll > 0) {
+            // CRITICAL: Do a visible scroll that will trigger momentum scroll compositor
+            // Scroll enough to ensure momentum scrolling is initialized
+            element.scrollTop = Math.min(10, maxScroll);
+            
+            // Force immediate reflow to commit the scroll
+            void element.offsetHeight;
+            void element.scrollTop; // Force read to ensure layout
+            
+            // Wait for paint, then reset
+            requestAnimationFrame(() => {
+                // Reset scroll position
+                element.scrollTop = 0;
+                void element.offsetHeight;
+                
+                // CRITICAL: Do one more small scroll to ensure momentum compositor is ready
+                // This simulates what happens when user lifts finger - momentum needs to be ready
+                requestAnimationFrame(() => {
+                    if (maxScroll > 0) {
+                        element.scrollTop = 2;
+                        void element.offsetHeight;
+                        requestAnimationFrame(() => {
+                            element.scrollTop = 0;
+                            void element.offsetHeight;
+                        });
+                    }
+                });
+            });
+        } else {
+            // Even if no scrollable content, still trigger compositor
+            element.scrollTop = 0.5;
+            void element.offsetHeight;
+            requestAnimationFrame(() => {
+                element.scrollTop = 0;
+                void element.offsetHeight;
+            });
+        }
+    }
+
+    // ============================================================================
+    // DATA LOADING
+    // ============================================================================
+    
+    /**
+     * Loads quiz data from JSON file
+     * @returns {Promise<Object>} The quiz data object
+     */
+    async function loadQuizData() {
+        if (quizDataLoaded && quizData) {
+            return quizData;
+        }
+        
+        if (quizDataLoading) {
+            // Wait for existing load to complete
+            while (quizDataLoading) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            return quizData;
+        }
+        
+        quizDataLoading = true;
+        
+        try {
+            const response = await fetch('quiz-data.json');
+            if (!response.ok) {
+                throw new Error(`Failed to load quiz data: ${response.status} ${response.statusText}`);
+            }
+            quizData = await response.json();
+            quizDataLoaded = true;
+            console.log('Quiz data loaded successfully');
+            return quizData;
+        } catch (error) {
+            console.error('Error loading quiz data:', error);
+            if (window.Toast) {
+                window.Toast.error('Failed to load quiz data. Please refresh the page.', 'Quiz Data Error', 5000);
+            }
+            quizData = {}; // Set to empty object to prevent repeated failed attempts
+            throw error;
+        } finally {
+            quizDataLoading = false;
+        }
+    }
 
     // ============================================================================
     // DOM ELEMENTS
@@ -70,8 +136,9 @@
         quizView = document.getElementById('quiz-view');
         quizContent = document.getElementById('quiz-content');
         backToARButton = document.getElementById('back-to-ar-button');
+        quizScrollWrapper = document.getElementById('quiz-scroll-wrapper');
         
-        if (!quizView || !quizContent) {
+        if (!quizView || !quizContent || !quizScrollWrapper) {
             console.error('Quiz DOM elements not found');
             return false;
         }
@@ -86,7 +153,7 @@
      * Shows the quiz for a given model type
      * @param {string} modelType - The type of model ('wire-model', 'green-cube')
      */
-    function showQuiz(modelType) {
+    async function showQuiz(modelType) {
         console.log('Showing quiz for model type:', modelType);
         
         if (!getDOMElements()) {
@@ -94,6 +161,14 @@
             if (window.Toast) {
                 window.Toast.error('Quiz UI elements not found. Please refresh the page.', 'Quiz Error', 5000);
             }
+            return;
+        }
+
+        // Load quiz data if not already loaded
+        try {
+            await loadQuizData();
+        } catch (error) {
+            console.error('Failed to load quiz data:', error);
             return;
         }
 
@@ -112,11 +187,10 @@
         currentQuestionIndex = 0;
         userAnswers = [];
 
-        // Hide AR container completely to free up resources
+        // Hide AR container completely
         const arContainer = document.getElementById('ar-container');
         if (arContainer) {
             arContainer.style.display = 'none';
-            // Also hide any canvas elements inside
             const canvas = arContainer.querySelector('canvas');
             if (canvas) {
                 canvas.style.display = 'none';
@@ -124,29 +198,122 @@
             }
         }
 
-        // Show quiz view
-        quizView.classList.remove('hidden');
-
-        // Ensure quiz view is scrollable and reset scroll position
-        quizView.style.overflowY = 'auto';
-        quizView.style.overflowX = 'hidden';
-        quizView.scrollTop = 0;
-        
-        // Use will-change to optimize scrolling performance
-        quizView.style.willChange = 'scroll-position';
-        
-        // Force a reflow to ensure styles are applied
-        quizView.offsetHeight;
-        
-        // Use requestIdleCallback if available to defer non-critical work
-        if (window.requestIdleCallback) {
-            requestIdleCallback(() => {
-                // Any non-critical initialization can go here
-            });
+        // Hide reset button when in quiz mode
+        const resetButton = document.getElementById('reset-button');
+        if (resetButton) {
+            resetButton.classList.add('hidden');
         }
 
         // Render first question
         renderQuestion();
+
+        // CRITICAL: Hide XR overlay to prevent compositor interference
+        // Even though it has pointer-events: none, removing it from render tree
+        // ensures clean compositor layer creation for the quiz
+        const xrOverlay = document.getElementById('xr-overlay');
+        if (xrOverlay) {
+            xrOverlay.style.display = 'none';
+        }
+
+        // CRITICAL: Create a temporary compositor "hot" element
+        // This simulates what Instagram video overlay does - keeps compositor active
+        // We'll remove it after compositor is initialized
+        const tempCompositorHot = document.createElement('div');
+        tempCompositorHot.style.position = 'fixed';
+        tempCompositorHot.style.top = '0';
+        tempCompositorHot.style.left = '0';
+        tempCompositorHot.style.width = '1px';
+        tempCompositorHot.style.height = '1px';
+        tempCompositorHot.style.zIndex = '999998';
+        tempCompositorHot.style.pointerEvents = 'none';
+        tempCompositorHot.style.opacity = '0.01';
+        tempCompositorHot.style.transform = 'translateZ(0)';
+        document.body.appendChild(tempCompositorHot);
+
+        // Show quiz view (using display, not visibility, for cleaner state)
+        quizView.classList.remove('hidden');
+        
+        // CRITICAL: Force immediate layout calculation after showing
+        // This ensures iOS knows the element is visible
+        void quizView.offsetHeight;
+        
+        // CRITICAL iOS FIX: Add passive touch listeners to ensure scroll works
+        // This prevents any event interference
+        const ensureScrollWorks = () => {
+            if (quizScrollWrapper) {
+                // Add passive touch listeners to "prime" the scroll
+                const touchHandler = (e) => {
+                    // Don't prevent default - let iOS handle scroll naturally
+                };
+                quizScrollWrapper.addEventListener('touchstart', touchHandler, { passive: true });
+                quizScrollWrapper.addEventListener('touchmove', touchHandler, { passive: true });
+                quizScrollWrapper.addEventListener('touchend', touchHandler, { passive: true });
+            }
+        };
+        
+        // Reset scroll position
+        quizScrollWrapper.scrollTop = 0;
+        
+        // Force multiple layout calculations to ensure everything is measured
+        void quizView.offsetHeight;
+        void quizScrollWrapper.offsetHeight;
+        void quizScrollWrapper.scrollHeight;
+        void quizScrollWrapper.clientHeight;
+        void quizContent.offsetHeight;
+        
+        // Add touch listeners
+        ensureScrollWorks();
+        
+        // CRITICAL FIX: Wake up the iOS Safari scroll compositor
+        // This is THE KEY FIX - forces compositor initialization just like
+        // app switching or having an Instagram video call overlay does
+        // The freeze happens on finger lift (momentum scroll), so we need to
+        // ensure momentum scrolling compositor is fully initialized
+        requestAnimationFrame(() => {
+            // First frame: view should be painted now, force layout
+            void quizScrollWrapper.offsetHeight;
+            void quizScrollWrapper.scrollHeight;
+            void quizScrollWrapper.clientHeight;
+            
+            requestAnimationFrame(() => {
+                // Second frame: now wake up the scroll compositor (including momentum)
+                forceIOSRepaint(quizScrollWrapper);
+                
+                // Third frame: ensure momentum compositor is fully ready
+                requestAnimationFrame(() => {
+                    // Force final layout and verify scroll is ready
+                    void quizScrollWrapper.offsetHeight;
+                    void quizScrollWrapper.scrollHeight;
+                    
+                    // CRITICAL: One more momentum scroll simulation to ensure
+                    // the compositor is ready for when user lifts finger
+                    if (quizScrollWrapper.scrollHeight > quizScrollWrapper.clientHeight) {
+                        // Simulate a momentum scroll by doing a quick scroll sequence
+                        quizScrollWrapper.scrollTop = 3;
+                        void quizScrollWrapper.offsetHeight;
+                        requestAnimationFrame(() => {
+                            quizScrollWrapper.scrollTop = 1;
+                            void quizScrollWrapper.offsetHeight;
+                            requestAnimationFrame(() => {
+                                quizScrollWrapper.scrollTop = 0;
+                                void quizScrollWrapper.offsetHeight;
+                                
+                                // Now remove the temporary compositor hot element
+                                // Compositor should be fully initialized by now
+                                if (tempCompositorHot && tempCompositorHot.parentNode) {
+                                    tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                                }
+                            });
+                        });
+                    } else {
+                        // Remove temp element even if no scrollable content
+                        if (tempCompositorHot && tempCompositorHot.parentNode) {
+                            tempCompositorHot.parentNode.removeChild(tempCompositorHot);
+                        }
+                    }
+                });
+            });
+        });
 
         // Set up back button handler
         if (backToARButton) {
@@ -183,9 +350,17 @@
         `;
 
         // Add answer options
+        const userAnswer = userAnswers[currentQuestionIndex];
         question.options.forEach((option, index) => {
+            let buttonClass = 'option-button';
+            
+            // If user has already answered this question correctly, show it as correct
+            if (userAnswer !== undefined && index === question.correct) {
+                buttonClass += ' correct';
+            }
+            
             html += `
-                <button class="option-button" data-index="${index}">
+                <button class="${buttonClass}" data-index="${index}">
                     ${option}
                 </button>
             `;
@@ -223,19 +398,84 @@
      * Attaches event listeners to question elements
      */
     function attachQuestionListeners() {
+        const question = currentQuiz.questions[currentQuestionIndex];
+        const correctAnswerIndex = question.correct;
+        
         // Answer option buttons
         const answerOptions = quizContent.querySelectorAll('.option-button');
+        const nextButton = quizContent.querySelector('.next-button');
+        const submitButton = quizContent.querySelector('.submit-button');
+        
+        // If user has already answered this question correctly, enable next/submit button
+        if (userAnswers[currentQuestionIndex] !== undefined) {
+            if (nextButton) nextButton.disabled = false;
+            if (submitButton) submitButton.disabled = false;
+            
+            // Disable all buttons since the question is already answered
+            answerOptions.forEach(opt => {
+                opt.disabled = true;
+                opt.style.pointerEvents = 'none';
+            });
+            return; // Don't attach click listeners if already answered
+        } else {
+            // Disable next/submit buttons initially if no correct answer selected yet
+            if (nextButton) nextButton.disabled = true;
+            if (submitButton) submitButton.disabled = true;
+        }
+        
         answerOptions.forEach(button => {
+            const answerIndex = parseInt(button.getAttribute('data-index'));
+            
+            // If this answer was previously marked as incorrect, disable it
+            if (button.classList.contains('incorrect')) {
+                button.disabled = true;
+                button.style.pointerEvents = 'none';
+                return;
+            }
+            
             button.addEventListener('click', (e) => {
-                // Remove previous selection
-                answerOptions.forEach(opt => opt.classList.remove('selected'));
+                const clickedButton = e.target;
+                const selectedIndex = parseInt(clickedButton.getAttribute('data-index'));
                 
-                // Mark this option as selected
-                e.target.classList.add('selected');
-                
-                // Store answer
-                const answerIndex = parseInt(e.target.getAttribute('data-index'));
-                userAnswers[currentQuestionIndex] = answerIndex;
+                // Check if this is the correct answer
+                if (selectedIndex === correctAnswerIndex) {
+                    // Correct answer!
+                    clickedButton.classList.add('correct');
+                    clickedButton.classList.remove('selected');
+                    
+                    // Store the correct answer
+                    userAnswers[currentQuestionIndex] = selectedIndex;
+                    
+                    // Enable next/submit button
+                    if (nextButton) {
+                        nextButton.disabled = false;
+                    }
+                    if (submitButton) {
+                        submitButton.disabled = false;
+                    }
+                    
+                    // Disable all other buttons to prevent further clicks
+                    answerOptions.forEach(opt => {
+                        if (opt !== clickedButton) {
+                            opt.disabled = true;
+                            opt.style.pointerEvents = 'none';
+                        }
+                    });
+                    
+                    if (window.Toast) {
+                        window.Toast.success('Correct! You can now proceed.', 'Well Done', 2000);
+                    }
+                } else {
+                    // Wrong answer
+                    clickedButton.classList.add('incorrect');
+                    clickedButton.classList.remove('selected');
+                    clickedButton.disabled = true;
+                    clickedButton.style.pointerEvents = 'none';
+                    
+                    if (window.Toast) {
+                        window.Toast.error('That\'s not correct. Please try again.', 'Incorrect Answer', 2000);
+                    }
+                }
             });
         });
 
@@ -250,7 +490,6 @@
             });
         }
 
-        const nextButton = quizContent.querySelector('.next-button');
         if (nextButton) {
             nextButton.addEventListener('click', () => {
                 if (userAnswers[currentQuestionIndex] !== undefined) {
@@ -260,20 +499,19 @@
                     }
                 } else {
                     if (window.Toast) {
-                        window.Toast.warning('Please select an answer before continuing.', 'Select Answer', 3000);
+                        window.Toast.warning('Please select the correct answer before continuing.', 'Select Answer', 3000);
                     }
                 }
             });
         }
 
-        const submitButton = quizContent.querySelector('.submit-button');
         if (submitButton) {
             submitButton.addEventListener('click', () => {
                 if (userAnswers[currentQuestionIndex] !== undefined) {
                     showResults();
                 } else {
                     if (window.Toast) {
-                        window.Toast.warning('Please select an answer before submitting.', 'Select Answer', 3000);
+                        window.Toast.warning('Please select the correct answer before submitting.', 'Select Answer', 3000);
                     }
                 }
             });
@@ -281,74 +519,36 @@
     }
 
     /**
-     * Shows quiz results
+     * Shows quiz recap
      */
     function showResults() {
         if (!currentQuiz || !quizContent) {
             return;
         }
 
-        const totalQuestions = currentQuiz.questions.length;
-        let correctCount = 0;
-
-        // Calculate score
-        currentQuiz.questions.forEach((question, index) => {
-            if (userAnswers[index] === question.correct) {
-                correctCount++;
-            }
-        });
-
-        const score = Math.round((correctCount / totalQuestions) * 100);
-        
-        // Reset scroll position when showing results and ensure scrollability
-        if (quizView) {
-            quizView.scrollTop = 0;
-            quizView.style.overflowY = 'auto';
-            quizView.style.willChange = 'scroll-position';
-            // Force a reflow
-            quizView.offsetHeight;
-            
-            // Use requestAnimationFrame to ensure smooth scrolling
-            requestAnimationFrame(() => {
-                if (quizView) {
-                    // Ensure scroll is enabled after content is rendered
-                    quizView.style.overflowY = 'auto';
-                    quizView.scrollTop = 0;
-                }
-            });
-        }
-
-        // Build results HTML
+        // Build recap HTML
         let html = `
             <div class="quiz-header">
-                <h2>${currentQuiz.title} - Results</h2>
+                <h2>${currentQuiz.title} - Recap</h2>
             </div>
-            <div class="quiz-results">
-                <div class="score-display">
-                    <div class="score-circle">
-                        <div class="score-value">${score}%</div>
-                    </div>
-                    <p class="score-text">You got ${correctCount} out of ${totalQuestions} questions correct!</p>
+            <div class="quiz-recap">
+                <div class="recap-intro">
+                    <p>Here's a summary of what you learned:</p>
                 </div>
-                <div class="results-breakdown">
+                <div class="recap-list">
         `;
 
         // Show each question and answer
         currentQuiz.questions.forEach((question, index) => {
             const userAnswer = userAnswers[index];
-            const isCorrect = userAnswer === question.correct;
             const userAnswerText = question.options[userAnswer];
-            const correctAnswerText = question.options[question.correct];
 
             html += `
-                <div class="result-item ${isCorrect ? 'correct' : 'incorrect'}">
-                    <div class="result-icon">${isCorrect ? '✓' : '✗'}</div>
-                    <div class="result-content">
-                        <div class="result-question">${question.question}</div>
-                        <div class="result-answer">
-                            <strong>Your answer:</strong> ${userAnswerText}
-                        </div>
-                        ${!isCorrect ? `<div class="result-correct"><strong>Correct answer:</strong> ${correctAnswerText}</div>` : ''}
+                <div class="recap-item">
+                    <div class="recap-number">Question ${index + 1}</div>
+                    <div class="recap-content">
+                        <div class="recap-question">${question.question}</div>
+                        <div class="recap-answer">${userAnswerText}</div>
                     </div>
                 </div>
             `;
@@ -364,24 +564,12 @@
 
         quizContent.innerHTML = html;
 
-        // Use requestAnimationFrame to ensure DOM is fully updated before enabling scroll
-        requestAnimationFrame(() => {
-            // Ensure quiz view is scrollable after content is rendered
-            if (quizView) {
-                quizView.style.overflowY = 'auto';
-                quizView.style.willChange = 'scroll-position';
-                quizView.scrollTop = 0;
-                // Force a reflow to ensure browser recalculates scrollable area
-                quizView.offsetHeight;
-                
-                // Remove will-change after a short delay to avoid keeping it active
-                setTimeout(() => {
-                    if (quizView) {
-                        quizView.style.willChange = 'auto';
-                    }
-                }, 1000);
-            }
-        });
+        // Reset scroll position after content is rendered
+        if (quizScrollWrapper) {
+            quizScrollWrapper.scrollTop = 0;
+            // Force layout calculation
+            void quizScrollWrapper.offsetHeight;
+        }
 
         // Attach restart button listener
         const restartButton = quizContent.querySelector('.restart-button');
@@ -403,6 +591,17 @@
         // Hide quiz view
         if (quizView) {
             quizView.classList.add('hidden');
+        }
+        
+        // Reset scroll wrapper
+        if (quizScrollWrapper) {
+            quizScrollWrapper.scrollTop = 0;
+        }
+
+        // Restore XR overlay (was hidden when quiz was shown)
+        const xrOverlay = document.getElementById('xr-overlay');
+        if (xrOverlay) {
+            xrOverlay.style.display = '';
         }
 
         // Show AR container
@@ -429,6 +628,12 @@
                     startButton.disabled = true;
                     startButton.textContent = 'Starting...';
                     await window.ARController.init();
+                    
+                    // Show reset button after AR is initialized
+                    const resetButton = document.getElementById('reset-button');
+                    if (resetButton) {
+                        resetButton.classList.remove('hidden');
+                    }
                 } else {
                     // Fallback: click the button programmatically
                     startButton.click();
@@ -436,7 +641,7 @@
             } catch (error) {
                 console.error('Error restarting AR:', error);
                 if (window.Toast) {
-                    window.Toast.error('Failed to restart AR. Please click "Start AR" manually.', 'AR Restart Failed', 5000);
+                    window.Toast.error('Failed to restart AR. Please click "Start AR" manually.', 'AR Restart Failed', 5000, true);
                 }
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';

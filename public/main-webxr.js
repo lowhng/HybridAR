@@ -4,6 +4,20 @@
 // ============================================================================
 // EXPORT IMMEDIATELY
 // ============================================================================
+// Define debugMode and debugLog early to ensure they're always available
+let debugMode = false;
+
+/**
+ * Logs a debug message only if debug mode is enabled
+ * Defined early to ensure it's always available
+ * @param {...any} args - Arguments to pass to console.log
+ */
+function debugLog(...args) {
+    if (debugMode) {
+        console.log(...args);
+    }
+}
+
 if (typeof window !== 'undefined') {
     window.WebXRAR = window.WebXRAR || {};
     window.WebXRAR._scriptLoaded = true;
@@ -114,6 +128,8 @@ let xrReferenceSpace = null;
 let xrHitTestSource = null;
 let currentSurfaceType = null; // 'floor' or 'wall'
 let currentModelType = null; // 'wire-model', 'green-cube' (puddle model), etc.
+let isExitingToQuiz = false; // Flag to prevent returnToStartScreen when exiting to quiz
+// debugMode is defined at the top of the file to ensure it's always available
 
 // ============================================================================
 // THREE.JS SCENE SETUP
@@ -129,6 +145,7 @@ let reticleFloorGeometry; // Ring geometry for floor
 let reticleWallGeometry; // Crosshair geometry for wall
 let reticleMaterial; // Material that changes color
 let animationTime = 0;
+let lastAnimationTimestamp = 0; // For frame-rate independent animation
 
 // ============================================================================
 // GAZE DETECTION STATE
@@ -139,6 +156,32 @@ let lastGazeCheckTime = 0;
 const GAZE_THRESHOLD_MS = 2000; // 2 seconds
 const GAZE_ANGLE_THRESHOLD = Math.PI / 6; // 30 degrees (in radians)
 let raycaster = null; // Will be initialized after THREE is available
+
+// ============================================================================
+// AUTO-SPAWN STATE
+// ============================================================================
+let autoSpawnTimer = 0; // Time since AR session started (in milliseconds)
+let hasAutoSpawned = false; // Whether auto-spawn has occurred
+let autoSpawnTime = 0; // Random time between 3-5 seconds (in milliseconds)
+let autoSpawnDistance = 3.0; // Distance threshold in meters to determine if user is "too far"
+let spawnCooldown = 2000; // Cooldown time in milliseconds before allowing another spawn
+let lastSpawnAttemptTime = 0; // Timestamp of last spawn attempt
+let autoSpawnPosition = null; // Position where model was auto-spawned
+let surfaceDetectionTime = 0; // Timestamp when surface was first detected
+let lastReticlePosition = null; // Last reticle position for stability checking
+let surfaceStabilityDuration = 1500; // Minimum time (ms) surface must be stable before auto-spawn
+let reticleStabilityThreshold = 0.05; // Maximum position change (meters) to consider reticle stable
+let isSpawning = false; // Flag to prevent concurrent spawns
+
+// Performance optimization: Reusable vector/matrix objects to reduce allocations
+const _tempVector = new THREE.Vector3();
+const _tempVector2 = new THREE.Vector3();
+const _tempMatrix = new THREE.Matrix4();
+const _tempQuaternion = new THREE.Quaternion();
+
+// Position smoothing for initial placement (reduces jitter from noisy hit-test)
+const SMOOTHING_SAMPLES = 5; // Number of hit-test results to average
+let recentHitTestPoses = []; // Array to store recent hit-test poses for smoothing
 
 // ============================================================================
 // DOM ELEMENTS
@@ -183,7 +226,7 @@ function ensureOverlayRoot() {
         overlayRoot.appendChild(overlayUI);
         document.body.appendChild(overlayRoot);
         
-        console.log('Overlay root created');
+        debugLog('Overlay root created');
     } else {
         // Overlay exists, find or create UI container
         overlayUI = document.getElementById('xr-overlay-ui');
@@ -193,21 +236,28 @@ function ensureOverlayRoot() {
             overlayUI.style.pointerEvents = 'auto';
             overlayRoot.appendChild(overlayUI);
         }
-        console.log('Overlay root found');
+        debugLog('Overlay root found');
     }
     
     // Move reset button into overlay UI if it exists and isn't already there
     const resetButton = document.getElementById('reset-button');
     if (resetButton && resetButton.parentElement !== overlayUI) {
         overlayUI.appendChild(resetButton);
-        console.log('Reset button moved into overlay UI');
+        debugLog('Reset button moved into overlay UI');
+    }
+    
+    // Move close button into overlay UI if it exists and isn't already there
+    const closeButton = document.getElementById('close-button');
+    if (closeButton && closeButton.parentElement !== overlayUI) {
+        overlayUI.appendChild(closeButton);
+        debugLog('Close button moved into overlay UI');
     }
     
     // Move quiz button into overlay UI if it exists and isn't already there
     const quizButton = document.getElementById('quiz-button');
     if (quizButton && quizButton.parentElement !== overlayUI) {
         overlayUI.appendChild(quizButton);
-        console.log('Quiz button moved into overlay UI');
+        debugLog('Quiz button moved into overlay UI');
     }
     
     // Ensure toast container is accessible (can be sibling or inside overlay)
@@ -234,8 +284,38 @@ async function initWebXR() {
         throw new Error('AR container element not found. Ensure #ar-container exists in the DOM.');
     }
     
+    // Show AR container and canvas (in case they were hidden from previous session)
+    arContainer.style.display = 'block';
+    arContainer.style.visibility = 'visible';
+    const existingCanvas = arContainer.querySelector('canvas');
+    if (existingCanvas) {
+        existingCanvas.style.display = 'block';
+        existingCanvas.style.visibility = 'visible';
+        existingCanvas.style.opacity = '1';
+    }
+    
+    // Set up debug toggle event listener
+    const debugCheckbox = document.getElementById('debug-checkbox');
+    if (debugCheckbox) {
+        debugCheckbox.addEventListener('change', (e) => {
+            debugMode = e.target.checked;
+            console.log('Debug mode:', debugMode ? 'enabled' : 'disabled');
+        });
+        // Initialize debug mode from checkbox state
+        debugMode = debugCheckbox.checked;
+    }
+    
     // Create/ensure overlay root exists for DOM overlay support
     ensureOverlayRoot();
+    
+    // Ensure close button is in overlay UI if it's visible (for iOS WebXR)
+    const closeButton = document.getElementById('close-button');
+    if (closeButton && !closeButton.classList.contains('hidden') && overlayUI) {
+        if (closeButton.parentElement !== overlayUI) {
+            overlayUI.appendChild(closeButton);
+            debugLog('Close button moved to overlay UI during init');
+        }
+    }
     
     if (typeof THREE === 'undefined') {
         throw new Error('THREE.js is not loaded. Please ensure Three.js is loaded before this script.');
@@ -282,9 +362,9 @@ async function initWebXR() {
         throw new Error(error);
     }
 
-    console.log('WebXR supported, initializing...');
+    debugLog('WebXR supported, initializing...');
     if (window.Toast) {
-        window.Toast.info('WebXR is supported, starting initialization...', 'Initializing', 3000);
+        window.Toast.info('WebXR is supported, starting initialization...', 'Initializing', 3000, true);
     }
 
     // Create Three.js scene
@@ -311,7 +391,7 @@ async function initWebXR() {
     if (renderer.xr) {
         renderer.xr.enabled = true;
         // Don't set autoUpdate to false - iOS needs automatic updates
-        console.log('WebXR renderer configured');
+        debugLog('WebXR renderer configured');
     }
     
     // Set clear color with 0 alpha for transparency
@@ -341,7 +421,7 @@ async function initWebXR() {
     // This is especially important for iOS
     canvas.offsetHeight; // Trigger reflow
     
-    console.log('Canvas created and appended:', {
+    debugLog('Canvas created and appended:', {
         width: canvas.width,
         height: canvas.height,
         display: canvas.style.display,
@@ -428,8 +508,8 @@ async function initWebXR() {
 
     // Start WebXR session
     try {
-        console.log('Requesting WebXR session...');
-        console.log('Canvas ready:', {
+        debugLog('Requesting WebXR session...');
+        debugLog('Canvas ready:', {
             width: renderer.domElement.width,
             height: renderer.domElement.height,
             visible: renderer.domElement.style.visibility !== 'hidden'
@@ -439,7 +519,7 @@ async function initWebXR() {
         // This prevents the SDK from trying to process session requests before it's initialized
         const platform = window.PlatformDetector?.detectPlatform?.() || { isIOS: false };
         if (platform.isIOS) {
-            console.log('iOS detected - waiting for Variant Launch SDK to be fully ready...');
+            debugLog('iOS detected - waiting for Variant Launch SDK to be fully ready...');
             await new Promise(resolve => setTimeout(resolve, 200));
         }
         
@@ -465,7 +545,7 @@ async function initWebXR() {
         // Always attempt DOM overlay for both iOS and Android
         // Use the dedicated overlay root element
         const platformName = platform.isIOS ? 'iOS' : platform.isAndroid ? 'Android' : 'Other';
-        console.log(`Requesting session with dom-overlay (platform: ${platformName})`);
+        debugLog(`Requesting session with dom-overlay (platform: ${platformName})`);
         
         let sessionOptionsToUse = {
             ...baseSessionOptions,
@@ -477,7 +557,7 @@ async function initWebXR() {
             throw new Error('Session options object is invalid');
         }
         
-        console.log('Requesting session with options:', sessionOptionsToUse);
+        debugLog('Requesting session with options:', sessionOptionsToUse);
         
         // Wrap in try-catch to provide better error messages
         let triedDomOverlay = true;
@@ -486,9 +566,9 @@ async function initWebXR() {
             
             // Check if dom-overlay is actually active
             if (xrSession.enabledFeatures && xrSession.enabledFeatures.includes('dom-overlay')) {
-                console.log('DOM overlay active; HTML UI should be visible');
+                debugLog('DOM overlay active; HTML UI should be visible');
             } else {
-                console.log('DOM overlay requested but not enabled in session');
+                debugLog('DOM overlay requested but not enabled in session');
             }
         } catch (sessionError) {
             // If dom-overlay caused the failure, retry once without it
@@ -503,12 +583,12 @@ async function initWebXR() {
                     ...baseSessionOptions,
                     optionalFeatures: baseSessionOptions.optionalFeatures.filter(f => f !== 'dom-overlay')
                 };
-                console.log('Retrying session with options:', fallbackOptions);
+                debugLog('Retrying session with options:', fallbackOptions);
                 try {
                     xrSession = await navigator.xr.requestSession('immersive-ar', fallbackOptions);
                     console.warn('Session started without DOM overlay - HTML UI may not be visible in AR');
                     if (window.Toast) {
-                        window.Toast.warning('DOM overlay not available. UI buttons may not appear in AR view.', 'Limited UI', 5000);
+                        window.Toast.warning('DOM overlay not available. UI buttons may not appear in AR view.', 'Limited UI', 5000, true);
                     }
                 } catch (fallbackError) {
                     // Fallback also failed, throw original error
@@ -534,12 +614,22 @@ async function initWebXR() {
             }
         }
 
-        console.log('WebXR session started successfully');
-        console.log('Session features:', xrSession.enabledFeatures);
-        console.log('Session object:', xrSession);
+        debugLog('WebXR session started successfully');
+        debugLog('Session features:', xrSession.enabledFeatures);
+        debugLog('Session object:', xrSession);
+        
+        // Initialize auto-spawn state
+        autoSpawnTimer = 0;
+        hasAutoSpawned = false;
+        autoSpawnTime = (3000 + Math.random() * 2000); // Random time between 3-5 seconds
+        lastSpawnAttemptTime = 0;
+        autoSpawnPosition = null;
+        surfaceDetectionTime = 0;
+        lastReticlePosition = null;
+        isSpawning = false; // Reset spawning flag
         
         if (window.Toast) {
-            window.Toast.success('WebXR session started!', 'Session Active', 3000);
+            window.Toast.success('WebXR session started!', 'Session Active', 3000, true);
         }
         
         // Prevent overlay taps from triggering XR select events
@@ -598,15 +688,13 @@ async function initWebXR() {
                 closeButton.addEventListener('touchstart', stopPropagation);
                 closeButton.addEventListener('pointerdown', stopPropagation);
                 
-                // Ensure close button ends session
+                // Close button returns to start screen
                 closeButton.addEventListener('click', () => {
-                    if (xrSession) {
-                        xrSession.end();
-                    }
+                    returnToStartScreen();
                 });
             }
             
-            console.log('Overlay event handlers attached to prevent XR select');
+            debugLog('Overlay event handlers attached to prevent XR select');
         }
         
         // CRITICAL for iOS: Ensure canvas is still visible before connecting renderer
@@ -619,12 +707,12 @@ async function initWebXR() {
         
         // Connect renderer to XR session
         await renderer.xr.setSession(xrSession);
-        console.log('Renderer connected to XR session');
+        debugLog('Renderer connected to XR session');
         
         // Force an immediate render to ensure camera feed appears
         // This is especially important for iOS
         renderer.render(scene, camera);
-        console.log('Initial render completed');
+        debugLog('Initial render completed');
         
         // Try different reference space types in order of preference
         const referenceSpaceTypes = ['local-floor', 'local', 'viewer'];
@@ -632,7 +720,7 @@ async function initWebXR() {
         for (const spaceType of referenceSpaceTypes) {
             try {
                 xrReferenceSpace = await xrSession.requestReferenceSpace(spaceType);
-                console.log(`Reference space obtained: ${spaceType}`);
+                debugLog(`Reference space obtained: ${spaceType}`);
                 break;
             } catch (e) {
                 console.warn(`Reference space '${spaceType}' not supported, trying next...`);
@@ -679,6 +767,11 @@ async function initWebXR() {
             xrSession = null;
             xrHitTestSource = null;
             isAnchored = false;
+            // Only return to start screen if we're not exiting to quiz
+            // (exitARToQuiz handles its own UI transitions)
+            if (!isExitingToQuiz) {
+                returnToStartScreen();
+            }
         });
 
         // Set up render loop - Three.js handles XR rendering automatically
@@ -687,7 +780,7 @@ async function initWebXR() {
         console.log('Render loop started - camera feed should be visible');
         
         if (window.Toast) {
-            window.Toast.info('Render loop started. Camera feed should appear shortly...', 'Rendering', 4000);
+            window.Toast.info('Render loop started. Camera feed should appear shortly...', 'Rendering', 4000, true);
         }
         
         // Force an immediate frame render to kickstart the loop (iOS sometimes needs this)
@@ -697,12 +790,12 @@ async function initWebXR() {
             if (renderer.xr.isPresenting) {
                 console.log('XR is presenting - camera feed should be visible');
                 if (window.Toast) {
-                    window.Toast.success('XR is presenting! Camera feed should be visible.', 'AR Active', 3000);
+                    window.Toast.success('XR is presenting! Camera feed should be visible.', 'AR Active', 3000, true);
                 }
             } else {
                 console.warn('XR is not presenting yet - this might be normal during initialization');
                 if (window.Toast) {
-                    window.Toast.warning('XR not presenting yet. This may be normal during initialization.', 'Initializing', 4000);
+                    window.Toast.warning('XR not presenting yet. This may be normal during initialization.', 'Initializing', 4000, true);
                 }
             }
         });
@@ -719,12 +812,13 @@ async function initWebXR() {
 
     } catch (error) {
         console.error('Failed to start WebXR session:', error);
-        // Show error in toast if available
+        // Show error in toast if available (debug mode only)
         if (window.Toast) {
             window.Toast.error(
                 `WebXR Session Error: ${error.message}\n\n${error.stack ? error.stack.substring(0, 300) : ''}`,
                 'WebXR Initialization Failed',
-                10000
+                10000,
+                true
             );
         }
         throw error;
@@ -784,7 +878,7 @@ async function createContentForSurface(surfaceType) {
         console.log('Loading wire.glb for wall surface...');
         
         if (window.Toast) {
-            window.Toast.info('Loading wire model...', 'Loading', 2000);
+            window.Toast.info('Loading wire model...', 'Loading', 2000, true);
         }
         
         try {
@@ -852,14 +946,14 @@ async function createContentForSurface(surfaceType) {
             console.log('=== WIRE.GLB ADDED TO SCENE ===');
             
             if (window.Toast) {
-                window.Toast.success('Wire model placed!', 'Success', 3000);
+                window.Toast.success('Wire model placed!', 'Success', 3000, true);
             }
         } catch (error) {
             console.error('=== FAILED TO LOAD WIRE.GLB ===');
             console.error('Error:', error?.message || String(error));
             
             if (window.Toast) {
-                window.Toast.error(`Failed to load wire model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000);
+                window.Toast.error(`Failed to load wire model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000, true);
             }
             
             console.log('Falling back to orange box for wall');
@@ -870,7 +964,7 @@ async function createContentForSurface(surfaceType) {
         console.log('Loading puddle.glb for floor surface...');
         
         if (window.Toast) {
-            window.Toast.info('Loading puddle model...', 'Loading', 2000);
+            window.Toast.info('Loading puddle model...', 'Loading', 2000, true);
         }
         
         try {
@@ -941,26 +1035,42 @@ async function createContentForSurface(surfaceType) {
             console.log('Puddle model scale:', puddleModel.scale);
             console.log('Puddle model scaled size:', scaledSize);
             
-            // Make sure model is visible and materials are properly set
+            // Helper function to apply puddle material settings
+            const applyPuddleMaterial = (mat) => {
+                if (!mat) return; // Safety check
+                
+                mat.visible = true;
+                // PUDDLE APPEARANCE SETTINGS - Adjust these values to change look
+                // Transparency: Enable FIRST before setting opacity
+                mat.transparent = true;
+                mat.opacity = 0.2; // 0.0 = fully transparent, 1.0 = fully opaque
+                
+                // Colors
+                mat.color = new THREE.Color(0x1a4d6b); // Dark blue base color
+                mat.emissive = new THREE.Color(0x0d3d5c); // Very dark blue for emissive
+                mat.emissiveIntensity = 0.2; // Glow intensity (0.0-1.0)
+                
+                // Material properties
+                if (mat.type === 'MeshStandardMaterial' || mat.type === 'MeshPhysicalMaterial') {
+                    mat.roughness = Math.max(mat.roughness || 1.0, 0.8);
+                    mat.metalness = Math.min(mat.metalness || 0.0, 0.2);
+                }
+                
+                // Force material update
+                mat.needsUpdate = true;
+            };
+            
+            // Make sure model is visible and apply materials
             puddleModel.visible = true;
             puddleModel.traverse((child) => {
-                if (child.isMesh) {
+                if (child.isMesh && child.material) {
                     child.visible = true;
-                    // Ensure materials are not transparent and are visible
-                    if (child.material) {
-                        if (Array.isArray(child.material)) {
-                            child.material.forEach(mat => {
-                                if (mat) {
-                                    mat.transparent = false;
-                                    mat.opacity = 1.0;
-                                    mat.visible = true;
-                                }
-                            });
-                        } else {
-                            child.material.transparent = false;
-                            child.material.opacity = 1.0;
-                            child.material.visible = true;
-                        }
+                    
+                    // Handle both single material and array of materials
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(applyPuddleMaterial);
+                    } else {
+                        applyPuddleMaterial(child.material);
                     }
                 }
             });
@@ -971,6 +1081,12 @@ async function createContentForSurface(surfaceType) {
             console.log('ContentGroup visible:', contentGroup.visible);
             console.log('PuddleModel visible:', puddleModel.visible);
             
+            // Debug: Log if multiple puddles are being added (should always be 1)
+            if (contentGroup.children.length > 1) {
+                console.warn('⚠️ WARNING: Multiple children in contentGroup! This should not happen.');
+                console.warn('Children count:', contentGroup.children.length);
+            }
+            
             // Verify final bounding box after all transformations
             const finalBox = new THREE.Box3().setFromObject(puddleModel);
             const finalSize = finalBox.getSize(new THREE.Vector3());
@@ -979,14 +1095,14 @@ async function createContentForSurface(surfaceType) {
             console.log('Final puddle model bounding box center:', finalCenter);
             
             if (window.Toast) {
-                window.Toast.success('Puddle model placed!', 'Success', 3000);
+                window.Toast.success('Puddle model placed!', 'Success', 3000, true);
             }
         } catch (error) {
             console.error('=== FAILED TO LOAD PUDDLE.GLB ===');
             console.error('Error:', error?.message || String(error));
             
             if (window.Toast) {
-                window.Toast.error(`Failed to load puddle model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000);
+                window.Toast.error(`Failed to load puddle model: ${error?.message || 'Unknown error'}`, 'Load Error', 6000, true);
             }
             
             console.log('Falling back to green box for floor');
@@ -1018,7 +1134,7 @@ function createWallPlaceholder() {
     console.log('Content group children count:', contentGroup.children.length);
     
     if (window.Toast) {
-        window.Toast.warning('Using placeholder instead of wire.glb', 'Model Not Loaded', 4000);
+        window.Toast.warning('Using placeholder instead of wire.glb', 'Model Not Loaded', 4000, true);
     }
 }
 
@@ -1041,6 +1157,20 @@ function createGreenBox() {
 // ============================================================================
 // TAP TO PLACE
 // ============================================================================
+
+/**
+ * Checks if user is too far from the auto-spawned model
+ * @param {THREE.Vector3} userPosition - Current user/camera position
+ * @returns {boolean} True if user is too far from spawn location
+ */
+function checkUserDistanceFromSpawn(userPosition) {
+    if (!autoSpawnPosition || !userPosition) {
+        return false;
+    }
+    
+    const distance = userPosition.distanceTo(autoSpawnPosition);
+    return distance > autoSpawnDistance;
+}
 
 /**
  * Infers surface type based on camera gaze direction
@@ -1112,9 +1242,15 @@ function setupTapToPlace() {
                 contentGroup.quaternion.multiply(upwardRotation);
               }
             
+            // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+            // This prevents jitter from matrix/transform mismatches
+            contentGroup.updateMatrix();
+            
             contentGroup.matrixAutoUpdate = true;
             contentGroup.visible = true;
             isAnchored = true;
+            // Clear smoothing buffer after placement
+            recentHitTestPoses = [];
             console.log(`Content placed at detected surface (${currentSurfaceType})`);
             return;
         }
@@ -1160,6 +1296,10 @@ function setupTapToPlace() {
                 // Set position and make model face camera direction
                 contentGroup.position.copy(targetPosition);
                 contentGroup.lookAt(position); // Face towards camera
+                
+                // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+                contentGroup.updateMatrix();
+                
                 contentGroup.matrixAutoUpdate = true;
                 contentGroup.visible = true;
                 isAnchored = true;
@@ -1205,9 +1345,9 @@ function detectSurfaceType(hitPose) {
     // Also check the Y component directly as an alternative method
     const yComponent = Math.abs(upVector.y);
     
-    // Debug logging (can be removed later)
-    if (frameCount % 60 === 0) {
-        console.log('Surface detection - Y-axis:', 
+    // Debug logging (only in debug mode to reduce overhead)
+    if (debugMode && frameCount % 60 === 0) {
+        debugLog('Surface detection - Y-axis:', 
             `(${upVector.x.toFixed(2)}, ${upVector.y.toFixed(2)}, ${upVector.z.toFixed(2)})`, 
             'dot product:', dotProduct.toFixed(2), 
             'Y component:', yComponent.toFixed(2));
@@ -1272,12 +1412,12 @@ function onXRFrame(timestamp, frame) {
     
     // Log first few frames to confirm render loop is running (especially important for iOS debugging)
     if (frameCount === 1) {
-        console.log('WebXR render loop started - first frame rendered');
+        debugLog('WebXR render loop started - first frame rendered');
         if (window.Toast) {
-            window.Toast.success('First frame rendered!', 'Render Loop Active', 2000);
+            window.Toast.success('First frame rendered!', 'Render Loop Active', 2000, true);
         }
     } else if (frameCount <= 5 || frameCount % 300 === 0) {
-        console.log('WebXR render loop active - frame:', frameCount, 'hasFrame:', !!frame);
+        debugLog('WebXR render loop active - frame:', frameCount, 'hasFrame:', !!frame);
     }
     
     // CRITICAL: Always render even if we don't have a pose
@@ -1314,18 +1454,83 @@ function onXRFrame(timestamp, frame) {
                     
                     // Log surface type changes
                     if (surfaceType !== currentSurfaceType) {
-                        console.log('Surface type detected:', surfaceType);
+                        debugLog('Surface type detected:', surfaceType);
+                        // Reset stability tracking when surface type changes
+                        surfaceDetectionTime = 0;
+                        lastReticlePosition = null;
                     }
                     
                     updateReticleAppearance(surfaceType);
                     
-                    reticle.visible = true;
-                    reticle.matrix.fromArray(hitPose.transform.matrix);
+                    // Store hit-test pose for smoothing (only when not anchored, for initial placement)
+                    if (!isAnchored) {
+                        recentHitTestPoses.push({
+                            matrix: new Float32Array(hitPose.transform.matrix),
+                            timestamp: timestamp
+                        });
+                        // Keep only the most recent samples
+                        if (recentHitTestPoses.length > SMOOTHING_SAMPLES) {
+                            recentHitTestPoses.shift();
+                        }
+                    }
+                    
+                    // Use smoothed matrix if we have enough samples, otherwise use current
+                    let matrixToUse = hitPose.transform.matrix;
+                    if (!isAnchored && recentHitTestPoses.length >= 3) {
+                        // Average the recent poses for smoother placement (reuse temp objects)
+                        _tempVector.set(0, 0, 0);
+                        _tempMatrix.fromArray(recentHitTestPoses[recentHitTestPoses.length - 1].matrix);
+                        _tempQuaternion.setFromRotationMatrix(_tempMatrix); // Use latest rotation
+                        
+                        // Average positions from all samples
+                        for (let i = 0; i < recentHitTestPoses.length; i++) {
+                            _tempMatrix.fromArray(recentHitTestPoses[i].matrix);
+                            const posePos = _tempVector2;
+                            posePos.setFromMatrixPosition(_tempMatrix);
+                            _tempVector.add(posePos);
+                        }
+                        
+                        // Average position
+                        _tempVector.divideScalar(recentHitTestPoses.length);
+                        
+                        // Build smoothed matrix from averaged position and latest rotation
+                        _tempMatrix.makeRotationFromQuaternion(_tempQuaternion);
+                        _tempMatrix.setPosition(_tempVector);
+                        matrixToUse = _tempMatrix.elements;
+                    }
+                    
+                    reticle.visible = debugMode; // Only show reticle in debug mode
+                    reticle.matrix.fromArray(matrixToUse);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
+                    
+                    // Track surface stability for auto-spawn (reuse temp vector to reduce allocations)
+                    _tempVector.setFromMatrixPosition(reticle.matrix);
+                    
+                    if (lastReticlePosition === null) {
+                        // First detection of this surface
+                        surfaceDetectionTime = timestamp;
+                        lastReticlePosition = _tempVector.clone();
+                    } else {
+                        // Check if reticle position is stable (hasn't moved much)
+                        const positionChange = _tempVector.distanceTo(lastReticlePosition);
+                        if (positionChange > reticleStabilityThreshold) {
+                            // Position changed significantly - reset stability timer
+                            surfaceDetectionTime = timestamp;
+                            lastReticlePosition = _tempVector.clone();
+                        } else {
+                            // Position is stable - update last position but keep detection time
+                            lastReticlePosition = _tempVector.clone();
+                        }
+                    }
                 }
             } else {
                 reticle.visible = false;
                 currentSurfaceType = null;
+                // Reset stability tracking when no surface detected
+                surfaceDetectionTime = 0;
+                lastReticlePosition = null;
+                // Clear smoothing buffer when no surface detected
+                recentHitTestPoses = [];
             }
         } catch (error) {
             // Hit-test might fail occasionally, just hide reticle
@@ -1339,37 +1544,214 @@ function onXRFrame(timestamp, frame) {
         // Show a "tap anyway" reticle in front of camera
         const pose = frame.getViewerPose(xrReferenceSpace);
         if (pose && pose.views && pose.views.length > 0) {
-            const view = pose.views[0];
-            const matrix = new THREE.Matrix4().fromArray(view.transform.matrix);
-            const position = new THREE.Vector3();
-            const direction = new THREE.Vector3(0, 0, -1);
+        const view = pose.views[0];
+        _tempMatrix.fromArray(view.transform.matrix);
+        _tempVector.setFromMatrixPosition(_tempMatrix);
+        _tempVector2.set(0, 0, -1);
+        _tempVector2.applyMatrix4(_tempMatrix);
+        _tempVector2.sub(_tempVector).normalize();
             
-            position.setFromMatrixPosition(matrix);
-            direction.applyMatrix4(matrix);
-            direction.sub(position).normalize();
-            
-            // Position reticle 1m in front
-            reticle.position.copy(position);
-            reticle.position.addScaledVector(direction, 1.0);
-            reticle.lookAt(position);
-            reticle.visible = true;
+            // Position reticle 1m in front (reuse temp vectors)
+            reticle.position.copy(_tempVector);
+            reticle.position.addScaledVector(_tempVector2, 1.0);
+            reticle.lookAt(_tempVector);
+            reticle.visible = debugMode; // Only show reticle in debug mode
             reticle.matrixAutoUpdate = true;
             
             // Infer surface type from gaze direction for reticle appearance
-            const inferredType = inferSurfaceTypeFromGaze(direction);
+            const inferredType = inferSurfaceTypeFromGaze(_tempVector2);
             updateReticleAppearance(inferredType);
             
             // Update currentSurfaceType so tap handler knows what we're aiming at
             // But set it to null so tap handler uses inference instead of hit-test
             currentSurfaceType = null;
+            // Reset stability tracking when using fallback reticle (no hit-test)
+            surfaceDetectionTime = 0;
+            lastReticlePosition = null;
+            // Clear smoothing buffer when using fallback
+            recentHitTestPoses = [];
+        }
+    }
+
+    // Auto-spawn logic: spawn model after 3-5 seconds based on user gaze
+    if (!isAnchored && xrSession) {
+        const pose = frame.getViewerPose(xrReferenceSpace);
+        if (pose && pose.views && pose.views.length > 0) {
+            const view = pose.views[0];
+            _tempMatrix.fromArray(view.transform.matrix);
+            _tempVector.setFromMatrixPosition(_tempMatrix);
+            _tempVector2.set(0, 0, -1);
+            _tempVector2.applyMatrix4(_tempMatrix);
+            _tempVector2.sub(_tempVector).normalize();
+            
+            // Store in local vars for readability (these are just references to temp objects)
+            const cameraPosition = _tempVector;
+            const cameraDirection = _tempVector2;
+            
+            // Update auto-spawn timer
+            if (autoSpawnTimer === 0) {
+                autoSpawnTimer = timestamp;
+            }
+            
+            const elapsedTime = timestamp - autoSpawnTimer;
+            
+            // Check if user is too far from previous spawn (if one exists)
+            const isTooFar = hasAutoSpawned && checkUserDistanceFromSpawn(cameraPosition);
+            const canSpawnAgain = isTooFar && (timestamp - lastSpawnAttemptTime > spawnCooldown);
+            
+            // Check if surface is stable (detected and stable for required duration)
+            const surfaceStable = currentSurfaceType !== null && 
+                                 surfaceDetectionTime > 0 && 
+                                 (timestamp - surfaceDetectionTime) >= surfaceStabilityDuration;
+            
+            // Auto-spawn if:
+            // 1. Haven't spawned yet AND time has elapsed (3-5 seconds) AND surface is stable
+            // 2. OR user is too far from previous spawn and cooldown has passed AND surface is stable
+            // 3. AND not currently spawning (prevent multiple concurrent spawns)
+            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning;
+            
+            if (shouldSpawn) {
+                // Set spawning flag immediately to prevent concurrent spawns
+                isSpawning = true;
+                debugLog('🎯 Auto-spawn triggered - isSpawning flag set to true');
+                // Use reticle position/orientation if available (even if invisible)
+                // This ensures correct orientation matching tap-to-place behavior
+                let useReticle = false;
+                let spawnSurfaceType = null;
+                
+                // Check if reticle has valid matrix (it's updated even when invisible)
+                // Only use reticle if we have a detected surface (not fallback)
+                if (reticle && reticle.matrix && currentSurfaceType && lastReticlePosition !== null) {
+                    // Verify reticle matrix is not identity (has been set by hit-test)
+                    // Reuse temp vector to reduce allocations
+                    _tempVector.setFromMatrixPosition(reticle.matrix);
+                    // If reticle position is not at origin, it's been set by hit-test
+                    if (_tempVector.lengthSq() > 0.01) {
+                        useReticle = true;
+                        spawnSurfaceType = currentSurfaceType;
+                    }
+                }
+                
+                // Only spawn if we have a stable detected surface
+                if (!spawnSurfaceType) {
+                    // If we don't have a stable surface, don't spawn (wait for stable detection)
+                    debugLog('Auto-spawn skipped: no stable surface detected');
+                    return; // Exit early - don't spawn
+                }
+                
+                // Create and place content using reticle matrix (like tap-to-place)
+                (async () => {
+                    try {
+                        await createContentForSurface(spawnSurfaceType);
+                        
+                        // CRITICAL: Reset all transforms before applying new ones
+                        // This ensures each spawn starts fresh and doesn't retain previous rotation
+                        contentGroup.position.set(0, 0, 0);
+                        contentGroup.rotation.set(0, 0, 0);
+                        contentGroup.scale.set(1, 1, 1);
+                        contentGroup.quaternion.set(0, 0, 0, 1);
+                        contentGroup.matrix.identity();
+                        
+                        if (useReticle && reticle && reticle.matrix) {
+                            // Use reticle matrix directly (same as tap-to-place)
+                            // This ensures perfect alignment with the detected surface
+                            contentGroup.matrix.copy(reticle.matrix);
+                            
+                            // Extract position and rotation from the matrix
+                            contentGroup.position.setFromMatrixPosition(reticle.matrix);
+                            
+                            // Extract quaternion from reticle matrix to ensure exact same orientation
+                            const reticleQuaternion = new THREE.Quaternion();
+                            reticleQuaternion.setFromRotationMatrix(reticle.matrix);
+                            contentGroup.quaternion.copy(reticleQuaternion);
+                            
+                            // For wall surfaces, rotate the content 90 degrees upward to face outward from the wall
+                            if (spawnSurfaceType === 'wall') {
+                                const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
+                                    new THREE.Vector3(1, 0, 0),
+                                    -Math.PI / 2
+                                );
+                                // apply AFTER current orientation (local space)
+                                contentGroup.quaternion.multiply(upwardRotation);
+                            }
+                            
+                            // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+                            contentGroup.updateMatrix();
+                            
+                            // Store spawn position for distance checking
+                            autoSpawnPosition = contentGroup.position.clone();
+                        } else {
+                            // Fallback: place in front of camera (no hit-test available)
+                            const placementDistance = 1.0; // 1 meter
+                            // Reuse temp vector for spawn position calculation
+                            _tempVector.copy(cameraPosition);
+                            _tempVector.addScaledVector(cameraDirection, placementDistance);
+                            
+                            // Adjust vertical position based on surface type
+                            if (spawnSurfaceType === 'floor') {
+                                _tempVector.y = cameraPosition.y - 1.0; // Assume ~1m below camera is floor
+                            }
+                            
+                            // Position content at spawn location
+                            contentGroup.position.copy(_tempVector);
+                            
+                            // For wall surfaces, rotate to face outward
+                            if (spawnSurfaceType === 'wall') {
+                                // Make model face camera direction
+                                contentGroup.lookAt(cameraPosition);
+                                // Rotate 90 degrees upward to face outward from wall
+                                const upwardRotation = new THREE.Quaternion().setFromAxisAngle(
+                                    new THREE.Vector3(1, 0, 0),
+                                    -Math.PI / 2
+                                );
+                                contentGroup.quaternion.multiply(upwardRotation);
+                            } else {
+                                // For floor, just face camera
+                                contentGroup.lookAt(cameraPosition);
+                            }
+                            
+                            // CRITICAL: Update matrix to sync position/quaternion state before enabling auto-update
+                            contentGroup.updateMatrix();
+                            
+                            // Store spawn position for distance checking
+                            autoSpawnPosition = _tempVector.clone();
+                        }
+                        
+                        contentGroup.matrixAutoUpdate = true;
+                        contentGroup.visible = true;
+                        isAnchored = true;
+                        hasAutoSpawned = true;
+                        lastSpawnAttemptTime = timestamp;
+                        // Clear smoothing buffer after placement
+                        recentHitTestPoses = [];
+                        
+                        debugLog(`Auto-spawned ${spawnSurfaceType} model using ${useReticle ? 'reticle' : 'fallback'} placement`);
+                    } catch (error) {
+                        console.error('Error during auto-spawn:', error);
+                    } finally {
+                        // Always reset spawning flag when done (success or error)
+                        isSpawning = false;
+                    }
+                })();
+            }
         }
     }
 
     // Animate the cube (only if it's a cube, not wire model or puddle model)
+    // Use frame-rate independent calculation for consistent animation speed
     if (cubeMesh && isAnchored) {
-        animationTime = timestamp * 0.001;
-        cubeMesh.rotation.y = animationTime;
-        cubeMesh.rotation.x = animationTime * 0.5;
+        // Calculate deltaTime for frame-rate independence
+        const deltaTime = lastAnimationTimestamp > 0 ? timestamp - lastAnimationTimestamp : 16.67; // Default to ~60fps
+        lastAnimationTimestamp = timestamp;
+        
+        // Use deltaTime for smooth rotation (normalize to 60fps)
+        // Original code used timestamp * 0.001, so we maintain similar speed
+        const rotationSpeed = (deltaTime / 16.67) * 0.001; // Scale to match original speed at 60fps
+        cubeMesh.rotation.y += rotationSpeed;
+        cubeMesh.rotation.x += rotationSpeed * 0.5;
+    } else if (!isAnchored) {
+        // Reset animation timestamp when not anchored
+        lastAnimationTimestamp = 0;
     }
     
     // Wire model and puddle model stay static (no rotation)
@@ -1419,31 +1801,37 @@ function checkGazeAtModel(frame) {
         }
 
         const view = pose.views[0];
-        const viewMatrix = new THREE.Matrix4().fromArray(view.transform.matrix);
+        _tempMatrix.fromArray(view.transform.matrix);
         
-        // Get camera position and forward direction
-        const cameraPosition = new THREE.Vector3();
-        const cameraForward = new THREE.Vector3(0, 0, -1);
-        cameraPosition.setFromMatrixPosition(viewMatrix);
-        cameraForward.applyMatrix4(viewMatrix);
-        cameraForward.sub(cameraPosition).normalize();
+        // Get camera position and forward direction (reuse temp vectors)
+        _tempVector.setFromMatrixPosition(_tempMatrix);
+        _tempVector2.set(0, 0, -1);
+        _tempVector2.applyMatrix4(_tempMatrix);
+        _tempVector2.sub(_tempVector).normalize();
+        
+        // Store references for readability
+        const cameraPosition = _tempVector.clone(); // Clone since we'll reuse _tempVector
+        const cameraForward = _tempVector2.clone(); // Clone since we'll reuse _tempVector2
 
         // Get model center position in world space
+        // Only update matrix world when needed (gaze detection requires accurate world position)
         contentGroup.updateMatrixWorld(true);
-        const modelCenter = new THREE.Vector3();
-        contentGroup.getWorldPosition(modelCenter);
+        // Reuse temp vector for model center
+        _tempVector.set(0, 0, 0); // Reset
+        contentGroup.getWorldPosition(_tempVector);
+        const modelCenter = _tempVector;
 
-        // Calculate direction from camera to model
-        const toModel = new THREE.Vector3();
-        toModel.subVectors(modelCenter, cameraPosition);
-        const distance = toModel.length();
+        // Calculate direction from camera to model (reuse temp vector)
+        _tempVector2.subVectors(modelCenter, cameraPosition);
+        const distance = _tempVector2.length();
         
         // Check if model is too far (optional - can adjust threshold)
         if (distance > 5.0) {
             return false;
         }
         
-        toModel.normalize();
+        _tempVector2.normalize();
+        const toModel = _tempVector2;
 
         // Calculate angle between camera forward and direction to model
         const angle = Math.acos(THREE.MathUtils.clamp(cameraForward.dot(toModel), -1, 1));
@@ -1530,7 +1918,7 @@ function showQuizButton() {
         // Ensure button is in overlay UI for iOS WebXR
         if (overlayUI && quizButton.parentElement !== overlayUI) {
             overlayUI.appendChild(quizButton);
-            console.log('Quiz button moved to overlay UI');
+            debugLog('Quiz button moved to overlay UI');
         }
         quizButton.classList.remove('hidden');
     }
@@ -1550,11 +1938,17 @@ function hideQuizButton() {
 /**
  * Exits AR and shows quiz view
  */
-function exitARToQuiz() {
+async function exitARToQuiz() {
     if (!currentModelType) {
         console.warn('No model type available for quiz');
         return;
     }
+
+    // Store model type before ending session (session end event will reset it)
+    const modelTypeForQuiz = currentModelType;
+
+    // Set flag to prevent returnToStartScreen from being called
+    isExitingToQuiz = true;
 
     // Hide quiz button
     hideQuizButton();
@@ -1570,12 +1964,256 @@ function exitARToQuiz() {
         renderer.setAnimationLoop(null);
     }
 
-    // Show quiz view
+    // Show quiz view using the stored model type
     if (window.QuizSystem && window.QuizSystem.showQuiz) {
-        window.QuizSystem.showQuiz(currentModelType);
+        try {
+            await window.QuizSystem.showQuiz(modelTypeForQuiz);
+        } catch (error) {
+            console.error('Error showing quiz:', error);
+            // Reset flag if quiz failed to show
+            isExitingToQuiz = false;
+        }
     } else {
         console.error('QuizSystem not available');
+        // Reset flag if quiz system is not available
+        isExitingToQuiz = false;
     }
+}
+
+// ============================================================================
+// CLEANUP & RESOURCE MANAGEMENT
+// ============================================================================
+
+/**
+ * Comprehensive cleanup function to dispose of all resources and reset state
+ * This prevents memory leaks and ensures a clean state when closing AR
+ */
+function cleanupARResources() {
+    console.log('Cleaning up AR resources...');
+    
+    // Stop render loop first
+    if (renderer && renderer.setAnimationLoop) {
+        renderer.setAnimationLoop(null);
+    }
+    
+    // Clean up content group and all spawned objects
+    if (contentGroup) {
+        contentGroup.visible = false;
+        
+        // Reset transform
+        contentGroup.position.set(0, 0, 0);
+        contentGroup.rotation.set(0, 0, 0);
+        contentGroup.scale.set(1, 1, 1);
+        contentGroup.matrix.identity();
+        contentGroup.matrixAutoUpdate = true;
+        
+        // Dispose all children and their resources
+        while (contentGroup.children.length > 0) {
+            const child = contentGroup.children[0];
+            contentGroup.remove(child);
+            
+            // Dispose geometry
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            
+            // Dispose material(s)
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach(mat => {
+                        if (mat) mat.dispose();
+                    });
+                } else {
+                    child.material.dispose();
+                }
+            }
+            
+            // Traverse and dispose all nested objects
+            if (child.traverse) {
+                child.traverse((obj) => {
+                    if (obj.geometry) {
+                        obj.geometry.dispose();
+                    }
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) {
+                            obj.material.forEach(mat => {
+                                if (mat) mat.dispose();
+                            });
+                        } else {
+                            obj.material.dispose();
+                        }
+                    }
+                    // Dispose textures if they exist
+                    if (obj.material && obj.material.map) {
+                        obj.material.map.dispose();
+                    }
+                    if (obj.material && obj.material.normalMap) {
+                        obj.material.normalMap.dispose();
+                    }
+                    if (obj.material && obj.material.emissiveMap) {
+                        obj.material.emissiveMap.dispose();
+                    }
+                });
+            }
+            
+            // Call dispose if available
+            if (child.dispose && typeof child.dispose === 'function') {
+                try {
+                    child.dispose();
+                } catch (e) {
+                    console.warn('Error disposing child:', e);
+                }
+            }
+        }
+        
+        console.log('Content group cleaned up');
+    }
+    
+    // Clean up reticle
+    if (reticle) {
+        reticle.visible = false;
+        reticle.position.set(0, 0, 0);
+        reticle.rotation.set(0, 0, 0);
+        reticle.scale.set(1, 1, 1);
+        reticle.matrix.identity();
+    }
+    
+    // Reset model references (these are clones, so they're already disposed above)
+    cubeMesh = null;
+    wireModel = null;
+    puddleModel = null;
+    
+    // Reset all state variables
+    isAnchored = false;
+    placedSurfaceType = null;
+    currentSurfaceType = null;
+    currentModelType = null;
+    isExitingToQuiz = false;
+    
+    // Reset gaze detection
+    gazeTimer = 0;
+    isGazingAtModel = false;
+    lastGazeCheckTime = 0;
+    
+    // Reset auto-spawn state
+    autoSpawnTimer = 0;
+    hasAutoSpawned = false;
+    autoSpawnTime = 0;
+    lastSpawnAttemptTime = 0;
+    autoSpawnPosition = null;
+    surfaceDetectionTime = 0;
+    lastReticlePosition = null;
+    isSpawning = false; // Reset spawning flag
+    // Clear smoothing buffer
+    recentHitTestPoses = [];
+    
+    // Reset animation time
+    animationTime = 0;
+    lastAnimationTimestamp = 0;
+    
+    // Clean up XR resources
+    xrHitTestSource = null;
+    xrReferenceSpace = null;
+    
+    console.log('AR resources cleaned up');
+}
+
+// ============================================================================
+// RETURN TO START SCREEN
+// ============================================================================
+
+/**
+ * Returns to the start screen by ending the AR session and showing the start button
+ */
+function returnToStartScreen() {
+    console.log('Returning to start screen...');
+    
+    // Comprehensive cleanup of all AR resources
+    cleanupARResources();
+    
+    // End XR session if still active
+    if (xrSession) {
+        try {
+            xrSession.end();
+        } catch (e) {
+            console.warn('Error ending session:', e);
+        }
+        xrSession = null;
+    }
+    
+    // Hide and clear the AR container and canvas
+    const arContainer = document.getElementById('ar-container');
+    if (arContainer) {
+        // Find and clear canvas BEFORE hiding it
+        const canvas = arContainer.querySelector('canvas');
+        if (canvas && renderer) {
+            try {
+                // Clear the canvas by rendering a blank black frame
+                // Use opaque black to ensure nothing shows through
+                renderer.setClearColor(0x000000, 1); // Black with full opacity
+                renderer.clear();
+                
+                // Render an empty scene to clear any remaining content
+                if (scene && camera) {
+                    renderer.render(scene, camera);
+                }
+                
+                // Also try direct canvas clearing as fallback
+                const ctx = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                if (ctx) {
+                    ctx.clear(ctx.COLOR_BUFFER_BIT | ctx.DEPTH_BUFFER_BIT);
+                }
+                
+                // Reset clear color back to transparent for next session
+                renderer.setClearColor(0x000000, 0);
+            } catch (e) {
+                console.warn('Error clearing canvas:', e);
+            }
+        }
+        
+        // Hide the container and canvas after clearing
+        arContainer.style.display = 'none';
+        arContainer.style.visibility = 'hidden';
+        
+        if (canvas) {
+            canvas.style.display = 'none';
+            canvas.style.visibility = 'hidden';
+            canvas.style.opacity = '0';
+        }
+    }
+    
+    // Show start button and logo
+    const startButton = document.getElementById('start-button');
+    const logoContainer = document.getElementById('logo-container');
+    if (startButton) {
+        startButton.disabled = false;
+        startButton.textContent = 'Start AR';
+        startButton.classList.remove('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.remove('hidden');
+    }
+    
+    // Hide reset button and close button
+    const resetButton = document.getElementById('reset-button');
+    const closeButton = document.getElementById('close-button');
+    if (resetButton) {
+        resetButton.classList.add('hidden');
+    }
+    if (closeButton) {
+        closeButton.classList.add('hidden');
+    }
+    
+    // Hide quiz button
+    hideQuizButton();
+    
+    // Hide webxr instruction
+    const instruction = document.getElementById('webxr-instruction');
+    if (instruction) {
+        instruction.classList.add('hidden');
+    }
+    
+    console.log('Returned to start screen');
 }
 
 // ============================================================================
@@ -1598,31 +2236,63 @@ function resetAnchor() {
             contentGroup.matrix.identity();
             contentGroup.matrixAutoUpdate = true;
         
-        // Clear all children
+        // Clear all children with proper resource disposal
         while (contentGroup.children.length > 0) {
             const child = contentGroup.children[0];
             contentGroup.remove(child);
-            if (child.geometry) child.geometry.dispose();
+            
+            // Dispose geometry
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+            
+            // Dispose material(s)
             if (child.material) {
                 if (Array.isArray(child.material)) {
-                    child.material.forEach(mat => mat.dispose());
+                    child.material.forEach(mat => {
+                        if (mat) mat.dispose();
+                    });
                 } else {
                     child.material.dispose();
                 }
             }
+            
+            // Traverse and dispose all nested objects including textures
             if (child.traverse) {
                 child.traverse((obj) => {
-                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.geometry) {
+                        obj.geometry.dispose();
+                    }
                     if (obj.material) {
                         if (Array.isArray(obj.material)) {
-                            obj.material.forEach(mat => mat.dispose());
+                            obj.material.forEach(mat => {
+                                if (mat) mat.dispose();
+                            });
                         } else {
                             obj.material.dispose();
                         }
                     }
+                    // Dispose textures if they exist
+                    if (obj.material && obj.material.map) {
+                        obj.material.map.dispose();
+                    }
+                    if (obj.material && obj.material.normalMap) {
+                        obj.material.normalMap.dispose();
+                    }
+                    if (obj.material && obj.material.emissiveMap) {
+                        obj.material.emissiveMap.dispose();
+                    }
                 });
             }
-            if (child.dispose) child.dispose();
+            
+            // Call dispose if available
+            if (child.dispose && typeof child.dispose === 'function') {
+                try {
+                    child.dispose();
+                } catch (e) {
+                    console.warn('Error disposing child:', e);
+                }
+            }
         }
         
         console.log('Content group cleared and position reset');
@@ -1639,22 +2309,34 @@ function resetAnchor() {
     isGazingAtModel = false;
     hideQuizButton();
     
+    // Reset auto-spawn state
+    autoSpawnTimer = 0;
+    hasAutoSpawned = false;
+    autoSpawnTime = (3000 + Math.random() * 2000); // Random time between 3-5 seconds
+    lastSpawnAttemptTime = 0;
+    autoSpawnPosition = null;
+    surfaceDetectionTime = 0;
+    lastReticlePosition = null;
+    isSpawning = false; // Reset spawning flag
+    // Clear smoothing buffer
+    recentHitTestPoses = [];
+    
     // Reset reticle state properly
     if (xrHitTestSource) {
         // When hit-test is available, use matrix updates from hit-test
         reticle.matrixAutoUpdate = false;
-        reticle.visible = true;
+        reticle.visible = debugMode; // Only show reticle in debug mode
         // Reset surface type so it will be detected again
         currentSurfaceType = null;
     } else {
         // When no hit-test, use position-based updates
         reticle.matrixAutoUpdate = true;
-        reticle.visible = true;
+        reticle.visible = debugMode; // Only show reticle in debug mode
         // Default to floor appearance
         updateReticleAppearance('floor');
     }
     
-    console.log('Anchor reset complete - isAnchored:', isAnchored, 'contentGroup.visible:', contentGroup ? contentGroup.visible : 'N/A');
+    debugLog('Anchor reset complete - isAnchored:', isAnchored, 'contentGroup.visible:', contentGroup ? contentGroup.visible : 'N/A');
 }
 
 // ============================================================================
@@ -1668,6 +2350,8 @@ if (typeof window !== 'undefined') {
         isAnchored: () => isAnchored,
         exitToQuiz: exitARToQuiz,
         getCurrentModelType: () => currentModelType,
+        debugMode: () => debugMode,
+        setDebugMode: (enabled) => { debugMode = enabled; },
         _scriptLoaded: true,
         _loaded: true,
         _loadTime: Date.now()
