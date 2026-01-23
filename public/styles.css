@@ -78,7 +78,7 @@ body {
 /* Logo Container */
 .logo-container {
     position: absolute;
-    top: 50%;
+    top: 40%;
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 5;
@@ -100,7 +100,8 @@ body {
 
 .logo-image.tssl-logo {
     margin-bottom: 30px;
-    max-width: 1080px; /* 20% wider than default 900px */
+    transform: scaleX(1.2); /* Make 20% wider */
+    transform-origin: center;
 }
 
 .topic-text {
