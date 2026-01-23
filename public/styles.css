@@ -98,6 +98,10 @@ body {
     object-fit: contain;
 }
 
+.logo-image.tssl-logo {
+    margin-bottom: 30px;
+}
+
 .topic-text {
     margin-top: 20px;
     font-size: 24px;
