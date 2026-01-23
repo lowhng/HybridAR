@@ -173,6 +173,11 @@ let surfaceStabilityDuration = 1500; // Minimum time (ms) surface must be stable
 let reticleStabilityThreshold = 0.05; // Maximum position change (meters) to consider reticle stable
 let isSpawning = false; // Flag to prevent concurrent spawns
 
+// ============================================================================
+// TUTORIAL STATE
+// ============================================================================
+let tutorialActive = true; // Flag to prevent model spawning while tutorial is showing
+
 // Performance optimization: Reusable vector/matrix objects to reduce allocations
 const _tempVector = new THREE.Vector3();
 const _tempVector2 = new THREE.Vector3();
@@ -1225,6 +1230,12 @@ function setupTapToPlace() {
     if (!xrSession) return;
     
     xrSession.addEventListener('select', async () => {
+        // Prevent spawning while tutorial is active
+        if (tutorialActive) {
+            console.log('Tap-to-place blocked: tutorial is active');
+            return;
+        }
+        
         // If we have a valid reticle (hit-test result), always (re)place the
         // content at that location and choose the asset based on the currently
         // detected surface type. This allows:
@@ -1704,6 +1715,12 @@ function onXRFrame(timestamp, frame) {
                 if (!spawnSurfaceType) {
                     // If we don't have a stable surface, don't spawn (wait for stable detection)
                     debugLog('Auto-spawn skipped: no stable surface detected');
+                    return; // Exit early - don't spawn
+                }
+                
+                // Prevent auto-spawn while tutorial is active
+                if (tutorialActive) {
+                    debugLog('Auto-spawn skipped: tutorial is active');
                     return; // Exit early - don't spawn
                 }
                 
@@ -2210,7 +2227,7 @@ function returnToStartScreen() {
     }
     
     // Hide and clear the AR container and canvas
-    const arContainer = document.getElementById('ar-container');
+    arContainer = document.getElementById('ar-container');
     if (arContainer) {
         // Find and clear canvas BEFORE hiding it
         const canvas = arContainer.querySelector('canvas');
@@ -2292,6 +2309,14 @@ function returnToStartScreen() {
     if (tutorialContinueButton) {
         tutorialContinueButton.disabled = false;
         tutorialContinueButton.textContent = 'Continue';
+    }
+    
+    // Reset tutorial flag so tutorial will show again on next AR start
+    tutorialActive = true;
+    
+    // Remove blur class from AR container (reuse variable declared earlier)
+    if (arContainer) {
+        arContainer.classList.remove('tutorial-active');
     }
     
     console.log('Returned to start screen');
@@ -2434,6 +2459,10 @@ if (typeof window !== 'undefined') {
         getCurrentModelType: () => currentModelType,
         debugMode: () => debugMode,
         setDebugMode: (enabled) => { debugMode = enabled; },
+        setTutorialActive: (active) => { 
+            tutorialActive = active;
+            console.log('Tutorial active:', tutorialActive);
+        },
         _renderer: null, // Will be set after renderer is created
         _scriptLoaded: true,
         _loaded: true,
