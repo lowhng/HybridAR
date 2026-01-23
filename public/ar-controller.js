@@ -15,6 +15,12 @@ const resetButton = document.getElementById('reset-button');
 const logoContainer = document.getElementById('logo-container');
 const tutorialOverlay = document.getElementById('tutorial-overlay');
 const tutorialContinueButton = document.getElementById('tutorial-continue-button');
+const tutorialCameraVideo = document.getElementById('tutorial-camera-video');
+
+// ============================================================================
+// CAMERA STREAM STATE
+// ============================================================================
+let tutorialCameraStream = null;
 
 // ============================================================================
 // INITIALIZATION
@@ -304,13 +310,43 @@ function resetAR() {
 // TUTORIAL FUNCTIONS
 // ============================================================================
 
-function showTutorial() {
+async function showTutorial() {
+    // Reset continue button state
+    if (tutorialContinueButton) {
+        tutorialContinueButton.disabled = false;
+        tutorialContinueButton.textContent = 'Continue';
+    }
+    
     // Hide start button and logo
     if (startButton) {
         startButton.classList.add('hidden');
     }
     if (logoContainer) {
         logoContainer.classList.add('hidden');
+    }
+    
+    // Request camera access and start video stream
+    try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            const constraints = {
+                video: {
+                    facingMode: 'environment', // Use back camera
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+            
+            tutorialCameraStream = await navigator.mediaDevices.getUserMedia(constraints);
+            
+            if (tutorialCameraVideo && tutorialCameraStream) {
+                tutorialCameraVideo.srcObject = tutorialCameraStream;
+                // Video will autoplay due to autoplay attribute
+                console.log('Camera stream started for tutorial');
+            }
+        }
+    } catch (error) {
+        console.warn('Could not access camera for tutorial background:', error);
+        // Continue without camera background - tutorial will show with default background
     }
     
     // Show tutorial overlay
@@ -322,6 +358,16 @@ function showTutorial() {
 function hideTutorial() {
     if (tutorialOverlay) {
         tutorialOverlay.classList.add('hidden');
+    }
+    
+    // Stop camera stream
+    if (tutorialCameraStream) {
+        tutorialCameraStream.getTracks().forEach(track => track.stop());
+        tutorialCameraStream = null;
+    }
+    
+    if (tutorialCameraVideo) {
+        tutorialCameraVideo.srcObject = null;
     }
 }
 
@@ -343,7 +389,7 @@ if (tutorialContinueButton) {
             tutorialContinueButton.disabled = true;
             tutorialContinueButton.textContent = 'Starting...';
             
-            // Hide tutorial
+            // Hide tutorial (this will also stop the camera stream)
             hideTutorial();
             
             // Add a small delay to ensure UI updates
@@ -371,14 +417,8 @@ if (tutorialContinueButton) {
                 alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
             }
             
-            // Show tutorial again and re-enable continue button
-            if (tutorialOverlay) {
-                tutorialOverlay.classList.remove('hidden');
-            }
-            if (tutorialContinueButton) {
-                tutorialContinueButton.disabled = false;
-                tutorialContinueButton.textContent = 'Continue';
-            }
+            // Show tutorial again (will reset button state)
+            await showTutorial();
             
             // Also show start button and logo as fallback
             if (startButton) {

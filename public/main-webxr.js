@@ -2281,6 +2281,19 @@ function returnToStartScreen() {
         instruction.classList.add('hidden');
     }
     
+    // Hide tutorial overlay if visible
+    const tutorialOverlay = document.getElementById('tutorial-overlay');
+    if (tutorialOverlay) {
+        tutorialOverlay.classList.add('hidden');
+    }
+    
+    // Reset tutorial continue button state
+    const tutorialContinueButton = document.getElementById('tutorial-continue-button');
+    if (tutorialContinueButton) {
+        tutorialContinueButton.disabled = false;
+        tutorialContinueButton.textContent = 'Continue';
+    }
+    
     console.log('Returned to start screen');
 }
 
