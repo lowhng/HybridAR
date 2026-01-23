@@ -29,11 +29,6 @@ body {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    transition: filter 0.3s ease;
-}
-
-#ar-container.tutorial-active canvas {
-    filter: blur(20px);
 }
 
 /* Camera Selector */
@@ -420,13 +415,12 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
+    background: rgba(0, 0, 0, 0.8);
     display: flex;
     justify-content: center;
     align-items: center;
     z-index: 200;
-    overflow: hidden;
-    backdrop-filter: blur(20px);
-    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(4px);
 }
 
 .tutorial-overlay.hidden {
@@ -434,7 +428,6 @@ body {
 }
 
 .tutorial-content {
-    position: relative;
     background: white;
     border-radius: 20px;
     padding: 40px 30px;
@@ -442,7 +435,6 @@ body {
     width: 400px;
     text-align: center;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    z-index: 2;
 }
 
 .tutorial-content h2 {

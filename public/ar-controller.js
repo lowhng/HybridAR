@@ -84,10 +84,7 @@ async function initializeAR() {
             console.log('Reset button should be visible');
         }
         
-        // Show tutorial overlay on top of AR view
-        showTutorial();
-        
-        // Show instruction for WebXR users (will be hidden by tutorial overlay)
+        // Show instruction for WebXR users
         const instruction = document.getElementById('webxr-instruction');
         if (instruction) {
             instruction.classList.remove('hidden');
@@ -307,13 +304,7 @@ function resetAR() {
 // TUTORIAL FUNCTIONS
 // ============================================================================
 
-async function showTutorial() {
-    // Reset continue button state
-    if (tutorialContinueButton) {
-        tutorialContinueButton.disabled = false;
-        tutorialContinueButton.textContent = 'Continue';
-    }
-    
+function showTutorial() {
     // Hide start button and logo
     if (startButton) {
         startButton.classList.add('hidden');
@@ -322,10 +313,10 @@ async function showTutorial() {
         logoContainer.classList.add('hidden');
     }
     
-    // Add blur class to AR container to blur the camera feed
-    const arContainer = document.getElementById('ar-container');
-    if (arContainer) {
-        arContainer.classList.add('tutorial-active');
+    // Reset tutorial continue button state
+    if (tutorialContinueButton) {
+        tutorialContinueButton.disabled = false;
+        tutorialContinueButton.textContent = 'Continue';
     }
     
     // Show tutorial overlay
@@ -338,17 +329,6 @@ function hideTutorial() {
     if (tutorialOverlay) {
         tutorialOverlay.classList.add('hidden');
     }
-    
-    // Remove blur class from AR container
-    const arContainer = document.getElementById('ar-container');
-    if (arContainer) {
-        arContainer.classList.remove('tutorial-active');
-    }
-    
-    // Enable model spawning by setting tutorial flag to false
-    if (window.WebXRAR && window.WebXRAR.setTutorialActive) {
-        window.WebXRAR.setTutorialActive(false);
-    }
 }
 
 // ============================================================================
@@ -356,13 +336,23 @@ function hideTutorial() {
 // ============================================================================
 
 if (startButton) {
-    startButton.addEventListener('click', async () => {
+    startButton.addEventListener('click', () => {
+        console.log('Start AR button clicked');
+        showTutorial();
+    });
+}
+
+if (tutorialContinueButton) {
+    tutorialContinueButton.addEventListener('click', async () => {
         try {
-            console.log('Start AR button clicked');
-            startButton.disabled = true;
-            startButton.textContent = 'Starting...';
+            console.log('Tutorial continue button clicked');
+            tutorialContinueButton.disabled = true;
+            tutorialContinueButton.textContent = 'Starting...';
             
-            // Add a small delay to ensure button state is updated
+            // Hide tutorial
+            hideTutorial();
+            
+            // Add a small delay to ensure UI updates
             await new Promise(resolve => setTimeout(resolve, 50));
             
             await initializeAR();
@@ -387,6 +377,16 @@ if (startButton) {
                 alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
             }
             
+            // Show tutorial again and re-enable continue button
+            if (tutorialOverlay) {
+                tutorialOverlay.classList.remove('hidden');
+            }
+            if (tutorialContinueButton) {
+                tutorialContinueButton.disabled = false;
+                tutorialContinueButton.textContent = 'Continue';
+            }
+            
+            // Also show start button and logo as fallback
             if (startButton) {
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';
@@ -394,49 +394,6 @@ if (startButton) {
             }
             if (logoContainer) {
                 logoContainer.classList.remove('hidden');
-            }
-        }
-    });
-}
-
-if (tutorialContinueButton) {
-    tutorialContinueButton.addEventListener('click', async () => {
-        try {
-            console.log('Tutorial continue button clicked');
-            tutorialContinueButton.disabled = true;
-            tutorialContinueButton.textContent = 'Starting...';
-            
-            // Hide tutorial (this will enable model spawning)
-            hideTutorial();
-            
-            // Add a small delay to ensure UI updates
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            console.log('Tutorial dismissed - models can now spawn');
-        } catch (error) {
-            console.error('Failed to initialize AR:', error);
-            console.error('Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
-            
-            // Show user-friendly error in toast (debug mode only)
-            if (window.Toast) {
-                window.Toast.error(
-                    `${error.message}\n\n${error.stack ? error.stack.substring(0, 200) : ''}`,
-                    'Failed to Start AR',
-                    10000,
-                    true
-                );
-            } else {
-                alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
-            }
-            
-            // Re-enable continue button
-            if (tutorialContinueButton) {
-                tutorialContinueButton.disabled = false;
-                tutorialContinueButton.textContent = 'Continue';
             }
         }
     });
