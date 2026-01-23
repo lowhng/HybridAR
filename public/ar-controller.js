@@ -315,7 +315,38 @@ function resetAR() {
 // TUTORIAL FUNCTIONS
 // ============================================================================
 
+function hasTutorialBeenShown() {
+    // Check if tutorial has been shown in this session
+    return sessionStorage.getItem('tutorialShown') === 'true';
+}
+
+function markTutorialAsShown() {
+    // Mark tutorial as shown in this session
+    sessionStorage.setItem('tutorialShown', 'true');
+}
+
 function showTutorial() {
+    // Check if tutorial has already been shown in this session
+    if (hasTutorialBeenShown()) {
+        // Skip tutorial and go straight to AR initialization
+        console.log('Tutorial already shown in this session, skipping...');
+        showLoadingScreen();
+        initializeAR().catch(error => {
+            console.error('Failed to initialize AR:', error);
+            hideLoadingScreen();
+            if (window.Toast) {
+                window.Toast.error(
+                    `${error.message}\n\nPlease try again.`,
+                    'Failed to Start AR',
+                    10000
+                );
+            } else {
+                alert(`Failed to start AR:\n\n${error.message}`);
+            }
+        });
+        return;
+    }
+    
     // Hide start button and logo
     if (startButton) {
         startButton.classList.add('hidden');
@@ -384,6 +415,9 @@ if (tutorialContinueButton) {
             console.log('Tutorial continue button clicked');
             tutorialContinueButton.disabled = true;
             tutorialContinueButton.textContent = 'Starting...';
+            
+            // Mark tutorial as shown in this session
+            markTutorialAsShown();
             
             // Show loading screen immediately (this also hides start button and logo)
             showLoadingScreen();
