@@ -318,7 +318,7 @@ async function initWebXR() {
         debugCheckbox.addEventListener('change', (e) => {
             // Inverted logic: checked = auto placement (debugMode false), unchecked = manual placement with reticle (debugMode true)
             debugMode = !e.target.checked;
-            console.log('Auto Placement:', e.target.checked ? 'enabled' : 'disabled (reticle visible)');
+            debugLog('Auto Placement:', e.target.checked ? 'enabled' : 'disabled (reticle visible)');
         });
         // Initialize debug mode from checkbox state (inverted: checked = auto placement = false)
         debugMode = !debugCheckbox.checked;
