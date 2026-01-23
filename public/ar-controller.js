@@ -13,6 +13,8 @@ let capabilities = null;
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
 const logoContainer = document.getElementById('logo-container');
+const tutorialOverlay = document.getElementById('tutorial-overlay');
+const tutorialContinueButton = document.getElementById('tutorial-continue-button');
 
 // ============================================================================
 // INITIALIZATION
@@ -299,17 +301,52 @@ function resetAR() {
 }
 
 // ============================================================================
+// TUTORIAL FUNCTIONS
+// ============================================================================
+
+function showTutorial() {
+    // Hide start button and logo
+    if (startButton) {
+        startButton.classList.add('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.add('hidden');
+    }
+    
+    // Show tutorial overlay
+    if (tutorialOverlay) {
+        tutorialOverlay.classList.remove('hidden');
+    }
+}
+
+function hideTutorial() {
+    if (tutorialOverlay) {
+        tutorialOverlay.classList.add('hidden');
+    }
+}
+
+// ============================================================================
 // EVENT HANDLERS
 // ============================================================================
 
 if (startButton) {
-    startButton.addEventListener('click', async () => {
+    startButton.addEventListener('click', () => {
+        console.log('Start AR button clicked');
+        showTutorial();
+    });
+}
+
+if (tutorialContinueButton) {
+    tutorialContinueButton.addEventListener('click', async () => {
         try {
-            console.log('Start AR button clicked');
-            startButton.disabled = true;
-            startButton.textContent = 'Starting...';
+            console.log('Tutorial continue button clicked');
+            tutorialContinueButton.disabled = true;
+            tutorialContinueButton.textContent = 'Starting...';
             
-            // Add a small delay to ensure button state is updated
+            // Hide tutorial
+            hideTutorial();
+            
+            // Add a small delay to ensure UI updates
             await new Promise(resolve => setTimeout(resolve, 50));
             
             await initializeAR();
@@ -334,6 +371,16 @@ if (startButton) {
                 alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
             }
             
+            // Show tutorial again and re-enable continue button
+            if (tutorialOverlay) {
+                tutorialOverlay.classList.remove('hidden');
+            }
+            if (tutorialContinueButton) {
+                tutorialContinueButton.disabled = false;
+                tutorialContinueButton.textContent = 'Continue';
+            }
+            
+            // Also show start button and logo as fallback
             if (startButton) {
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';
