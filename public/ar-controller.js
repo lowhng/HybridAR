@@ -13,6 +13,9 @@ let capabilities = null;
 const startButton = document.getElementById('start-button');
 const resetButton = document.getElementById('reset-button');
 const logoContainer = document.getElementById('logo-container');
+const tutorialOverlay = document.getElementById('tutorial-overlay');
+const tutorialContinueButton = document.getElementById('tutorial-continue-button');
+const loadingOverlay = document.getElementById('loading-overlay');
 
 // ============================================================================
 // INITIALIZATION
@@ -30,6 +33,9 @@ async function initializeAR() {
 
     // If WebXR is not available, show a helpful message and bail out
     if (!capabilities.webxrSupported || !capabilities.useWebXR) {
+        // Hide loading screen
+        hideLoadingScreen();
+        
         const msg = 'WebXR immersive-ar is not supported on this device or browser.\n\n' +
             'Please open this experience in a WebXR-capable browser. On iOS, use the Variant Launch viewer; ' +
             'on Android, use Chrome.';
@@ -42,6 +48,10 @@ async function initializeAR() {
         if (startButton) {
             startButton.disabled = false;
             startButton.textContent = 'Start AR';
+            startButton.classList.remove('hidden');
+        }
+        if (logoContainer) {
+            logoContainer.classList.remove('hidden');
         }
         if (resetButton) {
             resetButton.classList.add('hidden');
@@ -91,6 +101,9 @@ async function initializeAR() {
                 instruction.classList.add('hidden');
             }, 4000);
         }
+        
+        // Hide loading screen on successful initialization
+        hideLoadingScreen();
     } catch (error) {
         console.error('Failed to initialize AR system:', error);
         
@@ -299,17 +312,86 @@ function resetAR() {
 }
 
 // ============================================================================
+// TUTORIAL FUNCTIONS
+// ============================================================================
+
+function showTutorial() {
+    // Hide start button and logo
+    if (startButton) {
+        startButton.classList.add('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.add('hidden');
+    }
+    
+    // Reset tutorial continue button state
+    if (tutorialContinueButton) {
+        tutorialContinueButton.disabled = false;
+        tutorialContinueButton.textContent = 'Continue';
+    }
+    
+    // Show tutorial overlay
+    if (tutorialOverlay) {
+        tutorialOverlay.classList.remove('hidden');
+    }
+}
+
+function hideTutorial() {
+    if (tutorialOverlay) {
+        tutorialOverlay.classList.add('hidden');
+    }
+}
+
+// ============================================================================
+// LOADING SCREEN FUNCTIONS
+// ============================================================================
+
+function showLoadingScreen() {
+    // Hide start button and logo immediately
+    if (startButton) {
+        startButton.classList.add('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.add('hidden');
+    }
+    
+    // Show loading overlay
+    if (loadingOverlay) {
+        loadingOverlay.classList.remove('hidden');
+    }
+}
+
+function hideLoadingScreen() {
+    if (loadingOverlay) {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+// ============================================================================
 // EVENT HANDLERS
 // ============================================================================
 
 if (startButton) {
-    startButton.addEventListener('click', async () => {
+    startButton.addEventListener('click', () => {
+        console.log('Start AR button clicked');
+        showTutorial();
+    });
+}
+
+if (tutorialContinueButton) {
+    tutorialContinueButton.addEventListener('click', async () => {
         try {
-            console.log('Start AR button clicked');
-            startButton.disabled = true;
-            startButton.textContent = 'Starting...';
+            console.log('Tutorial continue button clicked');
+            tutorialContinueButton.disabled = true;
+            tutorialContinueButton.textContent = 'Starting...';
             
-            // Add a small delay to ensure button state is updated
+            // Show loading screen immediately (this also hides start button and logo)
+            showLoadingScreen();
+            
+            // Hide tutorial
+            hideTutorial();
+            
+            // Add a small delay to ensure UI updates
             await new Promise(resolve => setTimeout(resolve, 50));
             
             await initializeAR();
@@ -321,6 +403,9 @@ if (startButton) {
                 message: error.message,
                 stack: error.stack
             });
+            
+            // Hide loading screen on error
+            hideLoadingScreen();
             
             // Show user-friendly error in toast (debug mode only)
             if (window.Toast) {
@@ -334,6 +419,16 @@ if (startButton) {
                 alert(`Failed to start AR:\n\n${error.message}\n\nCheck the console for more details.`);
             }
             
+            // Show tutorial again and re-enable continue button
+            if (tutorialOverlay) {
+                tutorialOverlay.classList.remove('hidden');
+            }
+            if (tutorialContinueButton) {
+                tutorialContinueButton.disabled = false;
+                tutorialContinueButton.textContent = 'Continue';
+            }
+            
+            // Also show start button and logo as fallback
             if (startButton) {
                 startButton.disabled = false;
                 startButton.textContent = 'Start AR';

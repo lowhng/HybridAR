@@ -7,6 +7,9 @@
 // Define debugMode and debugLog early to ensure they're always available
 let debugMode = false;
 
+// Auto placement toggle - controls reticle visibility and auto-spawn behavior (independent of debug mode)
+let autoPlacementEnabled = true;
+
 /**
  * Logs a debug message only if debug mode is enabled
  * Defined early to ensure it's always available
@@ -312,15 +315,16 @@ async function initWebXR() {
         existingCanvas.style.opacity = '1';
     }
     
-    // Set up debug toggle event listener
+    // Set up auto placement toggle event listener
     const debugCheckbox = document.getElementById('debug-checkbox');
     if (debugCheckbox) {
         debugCheckbox.addEventListener('change', (e) => {
-            debugMode = e.target.checked;
-            console.log('Debug mode:', debugMode ? 'enabled' : 'disabled');
+            // Checked = auto placement enabled, unchecked = manual placement with reticle
+            autoPlacementEnabled = e.target.checked;
+            debugLog('Auto Placement:', e.target.checked ? 'enabled' : 'disabled (reticle visible)');
         });
-        // Initialize debug mode from checkbox state
-        debugMode = debugCheckbox.checked;
+        // Initialize auto placement from checkbox state (checked = auto placement enabled)
+        autoPlacementEnabled = debugCheckbox.checked;
     }
     
     // Create/ensure overlay root exists for DOM overlay support
@@ -1553,8 +1557,8 @@ function onXRFrame(timestamp, frame) {
                     reticle.matrix.fromArray(matrixToUse);
                     reticle.matrixAutoUpdate = false; // Ensure this is set correctly
                     
-                    // In debug mode, hide reticle if it's pointing at the model to avoid occlusion
-                    if (debugMode) {
+                    // When auto placement is disabled, show reticle but hide if pointing at model to avoid occlusion
+                    if (!autoPlacementEnabled) {
                         reticle.visible = !isReticlePointingAtModel();
                     } else {
                         reticle.visible = false;
@@ -1617,8 +1621,8 @@ function onXRFrame(timestamp, frame) {
             // Update matrix so we can check position for occlusion
             reticle.updateMatrix();
             
-            // In debug mode, hide reticle if it's pointing at the model to avoid occlusion
-            if (debugMode) {
+            // When auto placement is disabled, show reticle but hide if pointing at model to avoid occlusion
+            if (!autoPlacementEnabled) {
                 reticle.visible = !isReticlePointingAtModel();
             } else {
                 reticle.visible = false;
@@ -1674,8 +1678,8 @@ function onXRFrame(timestamp, frame) {
             // 1. Haven't spawned yet AND time has elapsed (3-5 seconds) AND surface is stable
             // 2. OR user is too far from previous spawn and cooldown has passed AND surface is stable
             // 3. AND not currently spawning (prevent multiple concurrent spawns)
-            // 4. AND debug mode is OFF (in debug mode, only spawn on touch/manual placement)
-            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning && !debugMode;
+            // 4. AND auto placement is enabled (when disabled, only spawn on touch/manual placement)
+            const shouldSpawn = ((!hasAutoSpawned && elapsedTime >= autoSpawnTime) || canSpawnAgain) && surfaceStable && !isSpawning && autoPlacementEnabled;
             
             if (shouldSpawn) {
                 // Set spawning flag immediately to prevent concurrent spawns
@@ -2392,13 +2396,13 @@ function resetAnchor() {
     if (xrHitTestSource) {
         // When hit-test is available, use matrix updates from hit-test
         reticle.matrixAutoUpdate = false;
-        reticle.visible = debugMode; // Only show reticle in debug mode
+        reticle.visible = !autoPlacementEnabled; // Show reticle when auto placement is disabled
         // Reset surface type so it will be detected again
         currentSurfaceType = null;
     } else {
         // When no hit-test, use position-based updates
         reticle.matrixAutoUpdate = true;
-        reticle.visible = debugMode; // Only show reticle in debug mode
+        reticle.visible = !autoPlacementEnabled; // Show reticle when auto placement is disabled
         // Default to floor appearance
         updateReticleAppearance('floor');
     }

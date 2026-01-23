@@ -15,6 +15,7 @@
 
     <!-- Logo -->
     <div id="logo-container" class="logo-container">
+        <img src="assets/TSSL.png" alt="TSSL Logo" class="logo-image tssl-logo">
         <img src="assets/stratcom-logo-edit.png" alt="STRATCOM SECURITY Logo" class="logo-image">
         <p class="topic-text">Topic: Health & Safety in the Workplace</p>
     </div>
@@ -28,10 +29,13 @@
     <!-- Close Button (only visible for WebXR) -->
     <button id="close-button" class="close-button hidden" aria-label="Close AR">×</button>
 
-    <!-- Debug Toggle (top right) -->
+    <!-- Auto Placement Toggle (top right) -->
     <div id="debug-toggle" class="debug-toggle">
-        <input type="checkbox" id="debug-checkbox" />
-        <label for="debug-checkbox">Debug</label>
+        <label for="debug-checkbox" class="toggle-label">
+            <span class="toggle-text">Auto Placement</span>
+            <input type="checkbox" id="debug-checkbox" checked class="toggle-input" />
+            <span class="toggle-slider"></span>
+        </label>
     </div>
 
     <!-- WebXR Instruction (shown briefly when WebXR starts) -->
@@ -52,6 +56,23 @@
                 <div id="quiz-content"></div>
                 <button id="back-to-ar-button" class="back-to-ar-button">Back to AR</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Tutorial Overlay (hidden initially) -->
+    <div id="tutorial-overlay" class="tutorial-overlay hidden">
+        <div class="tutorial-content">
+            <h2>Welcome to the Workplace Health & Safety AR experience.</h2>
+            <p>Point your camera at a wall or the floor to reveal a scenario. Review what appears and select the most appropriate response for each situation.</p>
+            <button id="tutorial-continue-button" class="tutorial-continue-button">Continue</button>
+        </div>
+    </div>
+
+    <!-- Loading Overlay (hidden initially) -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p class="loading-text">Starting AR Experience...</p>
         </div>
     </div>
 
