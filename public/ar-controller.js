@@ -15,6 +15,7 @@ const resetButton = document.getElementById('reset-button');
 const logoContainer = document.getElementById('logo-container');
 const tutorialOverlay = document.getElementById('tutorial-overlay');
 const tutorialContinueButton = document.getElementById('tutorial-continue-button');
+const loadingOverlay = document.getElementById('loading-overlay');
 
 // ============================================================================
 // INITIALIZATION
@@ -32,6 +33,9 @@ async function initializeAR() {
 
     // If WebXR is not available, show a helpful message and bail out
     if (!capabilities.webxrSupported || !capabilities.useWebXR) {
+        // Hide loading screen
+        hideLoadingScreen();
+        
         const msg = 'WebXR immersive-ar is not supported on this device or browser.\n\n' +
             'Please open this experience in a WebXR-capable browser. On iOS, use the Variant Launch viewer; ' +
             'on Android, use Chrome.';
@@ -44,6 +48,10 @@ async function initializeAR() {
         if (startButton) {
             startButton.disabled = false;
             startButton.textContent = 'Start AR';
+            startButton.classList.remove('hidden');
+        }
+        if (logoContainer) {
+            logoContainer.classList.remove('hidden');
         }
         if (resetButton) {
             resetButton.classList.add('hidden');
@@ -93,6 +101,9 @@ async function initializeAR() {
                 instruction.classList.add('hidden');
             }, 4000);
         }
+        
+        // Hide loading screen on successful initialization
+        hideLoadingScreen();
     } catch (error) {
         console.error('Failed to initialize AR system:', error);
         
@@ -332,6 +343,31 @@ function hideTutorial() {
 }
 
 // ============================================================================
+// LOADING SCREEN FUNCTIONS
+// ============================================================================
+
+function showLoadingScreen() {
+    // Hide start button and logo immediately
+    if (startButton) {
+        startButton.classList.add('hidden');
+    }
+    if (logoContainer) {
+        logoContainer.classList.add('hidden');
+    }
+    
+    // Show loading overlay
+    if (loadingOverlay) {
+        loadingOverlay.classList.remove('hidden');
+    }
+}
+
+function hideLoadingScreen() {
+    if (loadingOverlay) {
+        loadingOverlay.classList.add('hidden');
+    }
+}
+
+// ============================================================================
 // EVENT HANDLERS
 // ============================================================================
 
@@ -349,6 +385,9 @@ if (tutorialContinueButton) {
             tutorialContinueButton.disabled = true;
             tutorialContinueButton.textContent = 'Starting...';
             
+            // Show loading screen immediately (this also hides start button and logo)
+            showLoadingScreen();
+            
             // Hide tutorial
             hideTutorial();
             
@@ -364,6 +403,9 @@ if (tutorialContinueButton) {
                 message: error.message,
                 stack: error.stack
             });
+            
+            // Hide loading screen on error
+            hideLoadingScreen();
             
             // Show user-friendly error in toast (debug mode only)
             if (window.Toast) {
