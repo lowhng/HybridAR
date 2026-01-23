@@ -78,7 +78,7 @@ body {
 /* Logo Container */
 .logo-container {
     position: absolute;
-    top: 40%;
+    top: 45%;
     left: 50%;
     transform: translate(-50%, -50%);
     z-index: 5;
@@ -100,12 +100,12 @@ body {
 
 .logo-image.tssl-logo {
     margin-bottom: 30px;
-    transform: scaleX(1.2); /* Make 20% wider */
+    transform: scale(1.2); /* Make 20% larger in both width and height */
     transform-origin: center;
 }
 
 .topic-text {
-    margin-top: 20px;
+    margin-top: 40px;
     font-size: 24px;
     font-weight: 600;
     color: #fff;
@@ -224,7 +224,7 @@ body {
     display: none;
 }
 
-/* Debug Toggle */
+/* Auto Placement Toggle */
 .debug-toggle {
     position: absolute;
     top: 20px;
@@ -232,26 +232,30 @@ body {
     z-index: 10;
     display: flex;
     align-items: center;
-    gap: 8px;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 8px 12px;
-    border-radius: 20px;
-    backdrop-filter: blur(4px);
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px 16px;
+    border-radius: 24px;
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .debug-toggle label {
     color: white;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     user-select: none;
+    letter-spacing: 0.3px;
 }
 
 .debug-toggle input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     cursor: pointer;
     accent-color: #667eea;
+    flex-shrink: 0;
 }
 
 .debug-toggle.hidden {

@@ -312,15 +312,16 @@ async function initWebXR() {
         existingCanvas.style.opacity = '1';
     }
     
-    // Set up debug toggle event listener
+    // Set up auto placement toggle event listener
     const debugCheckbox = document.getElementById('debug-checkbox');
     if (debugCheckbox) {
         debugCheckbox.addEventListener('change', (e) => {
-            debugMode = e.target.checked;
-            console.log('Debug mode:', debugMode ? 'enabled' : 'disabled');
+            // Inverted logic: checked = auto placement (debugMode false), unchecked = manual placement with reticle (debugMode true)
+            debugMode = !e.target.checked;
+            console.log('Auto Placement:', e.target.checked ? 'enabled' : 'disabled (reticle visible)');
         });
-        // Initialize debug mode from checkbox state
-        debugMode = debugCheckbox.checked;
+        // Initialize debug mode from checkbox state (inverted: checked = auto placement = false)
+        debugMode = !debugCheckbox.checked;
     }
     
     // Create/ensure overlay root exists for DOM overlay support
